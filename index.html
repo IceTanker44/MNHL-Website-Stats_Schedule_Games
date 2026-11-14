@@ -177,14 +177,28 @@ function renderFreeAgents(rows) {
   </div>`;
 }
  
+// Game rows: find columns from the "Team Home / Team Away / ..." header row so tabs with extra logo columns still line up
+const GC_DEFAULT = { home: 1, away: 3, time: 4, winner: 5, proj: 6, score: 7, stars: 8 };
+function updateGameCols(r, gc) {
+  if (!r.some(x => /^team home$/i.test(x))) return false;
+  const f = re => r.findIndex(x => re.test(x));
+  const m = { home: f(/^team home$/i), away: f(/^team away$/i), time: f(/^schedule time$/i), winner: f(/^winner$/i),
+              proj: f(/^projected winner$/i), score: f(/^score$/i), stars: f(/3 st/i) };
+  const shift = m.away >= 0 ? m.away - GC_DEFAULT.away : 0;
+  Object.keys(GC_DEFAULT).forEach(k => { gc[k] = m[k] >= 0 ? m[k] : GC_DEFAULT[k] + shift; });
+  return true;
+}
+ 
 // ---------- Schedule / standings (Season 1 and Pre-Season 1) ----------
 function renderSchedule(rows) {
   let inStats = false, playoff = false, round = '';
   const col = { place: 1, pts: 3, gp: 4, w: 5, l: 6, otl: 7 };
   const games = [], stand = [];
+  const gc = { ...GC_DEFAULT };
   for (const r of rows) {
-    const [a, b, c, d, e, f, g, h, i] = r;
+    const a = r[0];
     const filled = r.filter(x => x !== '');
+    if (updateGameCols(r, gc)) continue;
     if (r.some(x => /^placement$/i.test(x))) {           // standings header row -> map columns by name
       const find = re => r.findIndex(x => re.test(x));
       const m = { place: find(/^placement$/i), pts: find(/^points?$/i), gp: find(/^(games played|gp)$/i),
@@ -193,8 +207,9 @@ function renderSchedule(rows) {
       inStats = true; continue;
     }
     if (/^game\s*\d+/i.test(a) && !inStats) {
-      const win = /^(tbd|winner|wins?)$/i.test(f || '') ? '' : (f || '');
-      games.push({ game: a, home: b || 'TBD', away: d || c || 'TBD', time: e || 'TBD', winner: win, proj: g, score: h, stars: i, playoff, round });
+      const w = r[gc.winner] || '';
+      const win = /^(tbd|winner|wins?)$/i.test(w) ? '' : w;
+      games.push({ game: a, home: r[gc.home] || 'TBD', away: r[gc.away] || 'TBD', time: r[gc.time] || 'TBD', winner: win, proj: r[gc.proj], score: r[gc.score] || '', stars: r[gc.stars] || '', playoff, round });
     } else if (filled.length === 1 && a) {
       if (/^stats$/i.test(a)) inStats = true;
       else if (/^(games|team|home|away)$/i.test(a)) continue;
@@ -218,14 +233,21 @@ function renderSchedule(rows) {
     games.map(x => {
       if (x.banner) return `<div class="col-span-full text-center text-xs font-bold uppercase tracking-wider text-slate-400 border-y border-slate-800 py-1.5">${esc(x.banner)}</div>`;
       const done = x.winner !== '';
-      const stars = x.stars && !x.stars.includes('???') ? `<p class="text-xs text-amber-300 mt-1">⭐ ${esc(x.stars)}</p>` : '';
+      const sc = (x.score || '').match(/^(\d+)\s*[-–:]\s*(\d+)$/);
+      const hs = sc ? sc[1] : '', as = sc ? sc[2] : '';
+      const hWon = done && teamKey(x.winner) === teamKey(x.home), aWon = done && teamKey(x.winner) === teamKey(x.away);
+      const col = won => !done ? '' : (won ? 'text-emerald-400' : 'text-red-400');
+      const hasStars = x.stars && /[A-Za-z0-9]/.test(x.stars.replace(/\?/g, ''));
+      const stars = hasStars ? `<p class="text-xs text-amber-300 mt-2">Stars: ${esc(x.stars.replace(/\?\?\?/g, '–'))}</p>` : '';
       const badge = x.playoff ? `<div class="mb-2"><span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950">🏆 PLAYOFFS${x.round ? ' · ' + esc(x.round.toUpperCase()) : ''}</span></div>` : '';
       return `<div class="card rounded-xl p-3.5 ${x.playoff ? 'border-amber-500/50' : ''}">
         <div class="flex justify-between text-xs text-slate-400 mb-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>
-          <span class="px-2 py-0.5 rounded font-bold ${done ? 'bg-emerald-500/20 text-emerald-300' : 'bg-sky-500/20 text-sky-300'}">${done ? 'FINAL ' + esc(x.score || '') : esc(x.time)}</span></div>
+          <span class="px-2 py-0.5 rounded font-bold ${done ? 'bg-emerald-500/20 text-emerald-300' : 'bg-sky-500/20 text-sky-300'}">${done ? 'FINAL' + (sc ? '' : ' ' + esc(x.score)) : esc(x.time)}</span></div>
         ${badge}
-        <div class="flex justify-between items-center font-bold text-sm"><span>${esc(x.home)}</span><span class="text-xs text-slate-500">VS</span><span>${esc(x.away)}</span></div>
-        ${done ? `<p class="text-xs text-emerald-300 mt-1">Winner: ${esc(x.winner)}</p>` : (x.proj ? `<p class="text-xs text-slate-400 mt-1">Projected: ${esc(x.proj)}</p>` : '')}${stars}</div>`;
+        <div class="flex justify-between items-center font-bold text-sm gap-2">
+          <span class="${col(hWon)}">${esc(x.home)}${hs !== '' ? ` <span class="ml-1 text-white">${hs}</span>` : ''}</span><span class="text-xs text-slate-500">VS</span>
+          <span class="${col(aWon)}">${as !== '' ? `<span class="mr-1 text-white">${as}</span> ` : ''}${esc(x.away)}</span></div>
+        ${!done && x.proj ? `<p class="text-xs text-slate-400 mt-1">Projected: ${esc(x.proj)}</p>` : ''}${stars}</div>`;
     }).join('') + `</div>`;
   return html;
 }
@@ -300,12 +322,13 @@ const teamKey = n => (n || '').toLowerCase().replace(/rengades/g, 'renegades').r
 const sameTeam = (a, b) => { a = teamKey(a); b = teamKey(b); return a && b && (a.includes(b) || b.includes(a)); };
  
 function gamesFrom(rows) {
-  const out = []; let inStats = false;
+  const out = []; let inStats = false; const gc = { ...GC_DEFAULT };
   (rows || []).forEach(r => {
+    if (updateGameCols(r, gc)) return;
     if (r.some(x => /^placement$/i.test(x)) || (r.filter(x => x).length === 1 && /^stats$/i.test(r[0]))) inStats = true;
     if (!inStats && /^game\s*\d+/i.test(r[0])) {
-      const w = r[5] || '';
-      out.push({ game: r[0], home: r[1], away: r[3] || r[2], winner: /^(tbd|winner|wins?)$/i.test(w) ? '' : w, score: r[7] || '', stars: r[8] || '' });
+      const w = r[gc.winner] || '';
+      out.push({ game: r[0], home: r[gc.home], away: r[gc.away], winner: /^(tbd|winner|wins?)$/i.test(w) ? '' : w, score: r[gc.score] || '', stars: r[gc.stars] || '' });
     }
   });
   return out;
