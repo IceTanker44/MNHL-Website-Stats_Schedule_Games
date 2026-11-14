@@ -230,27 +230,36 @@ function renderSchedule(rows) {
     <thead><tr class="text-xs uppercase text-slate-400 border-b border-slate-800"><th class="p-2">#</th><th class="p-2">Team</th><th class="p-2">GP</th><th class="p-2">W</th><th class="p-2">L</th><th class="p-2">OTL</th><th class="p-2 text-sky-400">PTS</th></tr></thead><tbody class="divide-y divide-slate-800/60">
     ${stand.map(t => `<tr><td class="p-2">${t.place}</td><td class="p-2 font-bold">${esc(t.team)}</td><td class="p-2">${esc(t.gp)}</td><td class="p-2">${esc(t.w)}</td><td class="p-2">${esc(t.l)}</td><td class="p-2">${esc(t.otl)}</td><td class="p-2 font-bold text-sky-400">${esc(t.pts)}</td></tr>`).join('')}
     </tbody></table></div>`;
-  if (games.length) html += `<h3 class="font-display text-2xl font-bold text-sky-400 mt-6">GAMES</h3><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">` +
-    games.map(x => {
-      if (x.banner) return `<div class="col-span-full text-center text-xs font-bold uppercase tracking-wider text-slate-400 border-y border-slate-800 py-1.5">${esc(x.banner)}</div>`;
-      const done = x.winner !== '';
-      const sc = (x.score || '').match(/^(\d+)\s*[-–:]\s*(\d+)$/);
-      const hs = sc ? sc[1] : '', as = sc ? sc[2] : '';
-      const hWon = done && teamKey(x.winner) === teamKey(x.home), aWon = done && teamKey(x.winner) === teamKey(x.away);
-      const col = won => !done ? '' : (won ? 'text-emerald-400' : 'text-red-400');
-      const hasStars = x.stars && /[A-Za-z0-9]/.test(x.stars.replace(/\?/g, ''));
-      const stars = hasStars ? `<p class="text-xs text-amber-300 mt-2">Stars: ${esc(x.stars.replace(/\?\?\?/g, '–'))}</p>` : '';
-      const badge = x.playoff ? `<div class="mb-2"><span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950">🏆 PLAYOFFS${x.round ? ' · ' + esc(x.round.toUpperCase()) : ''}</span></div>` : '';
-      return `<div class="card rounded-xl p-3.5 ${x.playoff ? 'border-amber-500/50' : ''}">
-        <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
-          <span class="flex items-center gap-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>${done ? `<span class="px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300">${['Final', x.res, sc ? '' : x.score].filter(Boolean).map(esc).join(' ')}</span>` : ''}</span>
-          <span class="px-2 py-0.5 rounded font-bold bg-sky-500/20 text-sky-300">${esc(x.time)}</span></div>
-        ${badge}
-        <div class="flex justify-between items-center font-bold text-sm gap-2">
-          <span class="${col(hWon)}">${esc(x.home)}${hs !== '' ? ` <span class="ml-1 text-white">${hs}</span>` : ''}</span><span class="text-xs text-slate-500">VS</span>
-          <span class="${col(aWon)}">${as !== '' ? `<span class="mr-1 text-white">${as}</span> ` : ''}${esc(x.away)}</span></div>
-        ${!done && x.proj ? `<p class="text-xs text-slate-400 mt-1">Projected: ${esc(x.proj)}</p>` : ''}${stars}</div>`;
-    }).join('') + `</div>`;
+  const card = x => {
+    const done = x.winner !== '';
+    const sc = (x.score || '').match(/^(\d+)\s*[-–:]\s*(\d+)$/);
+    const hs = sc ? sc[1] : '', as = sc ? sc[2] : '';
+    const hWon = done && teamKey(x.winner) === teamKey(x.home), aWon = done && teamKey(x.winner) === teamKey(x.away);
+    const col = won => !done ? '' : (won ? 'text-emerald-400' : 'text-red-400');
+    const hasStars = x.stars && /[A-Za-z0-9]/.test(x.stars.replace(/\?/g, ''));
+    const stars = hasStars ? `<p class="text-xs text-amber-300 mt-2">Stars: ${esc(x.stars.replace(/\?\?\?/g, '–'))}</p>` : '';
+    return `<div class="card rounded-xl p-3.5 ${x.playoff ? 'border-amber-500/50' : ''}">
+      <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+        <span class="flex items-center gap-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>${done ? `<span class="px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300">${['Final', x.res, sc ? '' : x.score].filter(Boolean).map(esc).join(' ')}</span>` : ''}</span>
+        <span class="px-2 py-0.5 rounded font-bold bg-sky-500/20 text-sky-300">${esc(x.time)}</span></div>
+      <div class="flex justify-between items-center font-bold text-sm gap-2">
+        <span class="${col(hWon)}">${esc(x.home)}${hs !== '' ? ` <span class="ml-1 text-white">${hs}</span>` : ''}</span><span class="text-xs text-slate-500">VS</span>
+        <span class="${col(aWon)}">${as !== '' ? `<span class="mr-1 text-white">${as}</span> ` : ''}${esc(x.away)}</span></div>
+      ${!done && x.proj ? `<p class="text-xs text-slate-400 mt-1">Projected: ${esc(x.proj)}</p>` : ''}${stars}</div>`;
+  };
+  const regular = games.filter(x => !x.playoff), po = games.filter(x => x.playoff);
+  if (regular.length) html += `<h3 class="font-display text-2xl font-bold text-sky-400 mt-6">${po.length ? 'REGULAR SEASON' : 'GAMES'}</h3><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">` +
+    regular.map(x => x.banner
+      ? `<div class="col-span-full text-center text-xs font-bold uppercase tracking-wider text-slate-400 border-y border-slate-800 py-1.5">${esc(x.banner)}</div>`
+      : card(x)).join('') + `</div>`;
+  if (po.length) {
+    html += `<div class="mt-10 pt-6 border-t-2 border-amber-500/40"><h3 class="font-display text-3xl font-bold text-amber-400">🏆 PLAYOFFS</h3></div>`;
+    [...new Set(po.map(x => x.round || 'Playoffs'))].forEach(r => {
+      const g = po.filter(x => (x.round || 'Playoffs') === r);
+      html += `<h4 class="font-display text-xl font-bold text-slate-300 mt-4 mb-2">${esc(r.toUpperCase())}</h4>
+        <div class="grid gap-4 md:grid-cols-3 ${g.length >= 4 ? 'xl:grid-cols-5' : ''}">${g.map(card).join('')}</div>`;
+    });
+  }
   return html;
 }
  
