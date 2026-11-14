@@ -178,14 +178,15 @@ function renderFreeAgents(rows) {
 }
  
 // Game rows: find columns from the "Team Home / Team Away / ..." header row so tabs with extra logo columns still line up
-const GC_DEFAULT = { home: 1, away: 3, time: 4, winner: 5, proj: 6, score: 7, stars: 8 };
+const GC_DEFAULT = { home: 1, away: 3, time: 4, winner: 5, proj: 6, score: 7, stars: 8 };  // res (how it ended) is optional
 function updateGameCols(r, gc) {
-  if (!r.some(x => /^team home$/i.test(x))) return false;
   const f = re => r.findIndex(x => re.test(x));
-  const m = { home: f(/^team home$/i), away: f(/^team away$/i), time: f(/^schedule time$/i), winner: f(/^winner$/i),
-              proj: f(/^projected winner$/i), score: f(/^score$/i), stars: f(/3 st/i) };
-  const shift = m.away >= 0 ? m.away - GC_DEFAULT.away : 0;
+  const m = { home: f(/^(team )?home$/i), away: f(/^(team )?away$/i), time: f(/^sched(ule|uled) time$/i), winner: f(/^winner$/i),
+              proj: f(/^projected winner$/i), score: f(/^score$/i), stars: f(/3 st/i), res: f(/win in reg|reg\s*\/\s*ot/i) };
+  if (m.home < 0 || m.away < 0) return false;       // not a games header row
+  const shift = m.away - GC_DEFAULT.away;
   Object.keys(GC_DEFAULT).forEach(k => { gc[k] = m[k] >= 0 ? m[k] : GC_DEFAULT[k] + shift; });
+  gc.res = m.res;                                   // -1 when the tab has no "Win in Reg/OT" column
   return true;
 }
  
@@ -194,7 +195,7 @@ function renderSchedule(rows) {
   let inStats = false, playoff = false, round = '';
   const col = { place: 1, pts: 3, gp: 4, w: 5, l: 6, otl: 7 };
   const games = [], stand = [];
-  const gc = { ...GC_DEFAULT };
+  const gc = { ...GC_DEFAULT, res: -1 };
   for (const r of rows) {
     const a = r[0];
     const filled = r.filter(x => x !== '');
@@ -209,7 +210,7 @@ function renderSchedule(rows) {
     if (/^game\s*\d+/i.test(a) && !inStats) {
       const w = r[gc.winner] || '';
       const win = /^(tbd|winner|wins?)$/i.test(w) ? '' : w;
-      games.push({ game: a, home: r[gc.home] || 'TBD', away: r[gc.away] || 'TBD', time: r[gc.time] || 'TBD', winner: win, proj: r[gc.proj], score: r[gc.score] || '', stars: r[gc.stars] || '', playoff, round });
+      games.push({ game: a, home: r[gc.home] || 'TBD', away: r[gc.away] || 'TBD', time: r[gc.time] || 'TBD', winner: win, proj: r[gc.proj], score: r[gc.score] || '', stars: r[gc.stars] || '', res: gc.res >= 0 ? (r[gc.res] || '') : '', playoff, round });
     } else if (filled.length === 1 && a) {
       if (/^stats$/i.test(a)) inStats = true;
       else if (/^(games|team|home|away)$/i.test(a)) continue;
@@ -242,7 +243,7 @@ function renderSchedule(rows) {
       const badge = x.playoff ? `<div class="mb-2"><span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950">🏆 PLAYOFFS${x.round ? ' · ' + esc(x.round.toUpperCase()) : ''}</span></div>` : '';
       return `<div class="card rounded-xl p-3.5 ${x.playoff ? 'border-amber-500/50' : ''}">
         <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
-          <span class="flex items-center gap-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>${done ? `<span class="px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300">FINAL${sc ? '' : (x.score ? ' ' + esc(x.score) : '')}</span>` : ''}</span>
+          <span class="flex items-center gap-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>${done ? `<span class="px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300">${['FINAL', x.res, sc ? '' : x.score].filter(Boolean).map(esc).join(' ')}</span>` : ''}</span>
           <span class="px-2 py-0.5 rounded font-bold bg-sky-500/20 text-sky-300">${esc(x.time)}</span></div>
         ${badge}
         <div class="flex justify-between items-center font-bold text-sm gap-2">
