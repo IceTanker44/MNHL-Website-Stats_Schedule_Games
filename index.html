@@ -241,8 +241,9 @@ function renderSchedule(rows) {
       const stars = hasStars ? `<p class="text-xs text-amber-300 mt-2">Stars: ${esc(x.stars.replace(/\?\?\?/g, '–'))}</p>` : '';
       const badge = x.playoff ? `<div class="mb-2"><span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950">🏆 PLAYOFFS${x.round ? ' · ' + esc(x.round.toUpperCase()) : ''}</span></div>` : '';
       return `<div class="card rounded-xl p-3.5 ${x.playoff ? 'border-amber-500/50' : ''}">
-        <div class="flex justify-between text-xs text-slate-400 mb-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>
-          <span class="px-2 py-0.5 rounded font-bold ${done ? 'bg-emerald-500/20 text-emerald-300' : 'bg-sky-500/20 text-sky-300'}">${done ? 'FINAL' + (sc ? '' : ' ' + esc(x.score)) : esc(x.time)}</span></div>
+        <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+          <span class="flex items-center gap-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>${done ? `<span class="px-2 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-300">FINAL${sc ? '' : (x.score ? ' ' + esc(x.score) : '')}</span>` : ''}</span>
+          <span class="px-2 py-0.5 rounded font-bold bg-sky-500/20 text-sky-300">${esc(x.time)}</span></div>
         ${badge}
         <div class="flex justify-between items-center font-bold text-sm gap-2">
           <span class="${col(hWon)}">${esc(x.home)}${hs !== '' ? ` <span class="ml-1 text-white">${hs}</span>` : ''}</span><span class="text-xs text-slate-500">VS</span>
