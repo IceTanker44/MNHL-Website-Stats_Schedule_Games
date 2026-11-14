@@ -42,6 +42,12 @@ const SHEET_ID = '10r_w3Sy2j50YWrX8LpvGSk7oGGgEaBKN8gJIASP4Fyo';
 const FREE_AGENT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSciVKGc0y7LX-s-YR7Lcsvj23UYpMoIULXDqygMX9CoJQkxag/viewform';
 const DISCORD_URL = 'https://discord.gg/hzamb3jURt';
  
+// Players who get a real skin head. Format: 'name as written in the sheet (lowercase)': 'Java username whose skin to show'
+// Everyone not listed gets a colored initials badge.
+const SKINS = {
+  'icetanker2094': 'IceTanker'
+};
+ 
 // button label -> exact tab name in the sheet (null = reuses the roster tab)
 const TABS = {
   'Rosters':      "Team Roster's",
@@ -74,7 +80,9 @@ async function fetchTab(tab) {
 const avatar = (name, size) => {
   const ini = (name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?';
   let h = 0; for (const ch of (name || '')) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return `<div class="${size} rounded-lg flex items-center justify-center font-display font-bold text-white shrink-0" style="background:hsl(${h} 55% 35%)">${esc(ini)}</div>`;
+  const java = SKINS[(name || '').toLowerCase()];
+  const img = java ? `<img src="https://mc-heads.net/avatar/${encodeURIComponent(java)}/96" alt="" class="absolute inset-0 w-full h-full rounded-lg" onerror="this.remove()">` : '';
+  return `<div class="relative ${size} rounded-lg flex items-center justify-center font-display font-bold text-white shrink-0" style="background:hsl(${h} 55% 35%)">${esc(ini)}${img}</div>`;
 };
  
 // ---------- Rosters + Free Agents ----------
