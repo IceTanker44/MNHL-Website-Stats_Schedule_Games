@@ -250,10 +250,38 @@ async function load() {
 }
  
 // ---------- Player pages (click any player) ----------
+// Google's CSV feed blanks header cells in number-heavy columns, so fall back to known labels.
+const ROSTER_LABELS = ['Name', 'Number', 'Position', 'Overall', 'Projected Overall', 'PTS', 'Rank', 'GP', 'PTS Per Game', '3 Stars of the Game'];
+const STAT_LABELS = ['Player', 'Pos', 'GP', 'Goals', 'Shots', 'Points', 'Hits', 'Faceoff Wins', 'Faceoffs', 'Blocked Shots', 'Shots Against', 'Penalties', 'Overall'];
+ 
+const teamKey = n => (n || '').toLowerCase().replace(/rengades/g, 'renegades').replace(/[^a-z]/g, '');
+const sameTeam = (a, b) => { a = teamKey(a); b = teamKey(b); return a && b && (a.includes(b) || b.includes(a)); };
+ 
+function gamesFrom(rows) {
+  const out = []; let inStats = false;
+  (rows || []).forEach(r => {
+    if (r.some(x => /^placement$/i.test(x)) || (r.filter(x => x).length === 1 && /^stats$/i.test(r[0]))) inStats = true;
+    if (!inStats && /^game\s*\d+/i.test(r[0])) {
+      const w = r[5] || '';
+      out.push({ game: r[0], home: r[1], away: r[3] || r[2], winner: /^(tbd|winner|wins?)$/i.test(w) ? '' : w, score: r[7] || '', stars: r[8] || '' });
+    }
+  });
+  return out;
+}
+ 
+function recentGames(team, name) {
+  if (!team) return [];
+  const key = name.toLowerCase();
+  const all = [['Season 1', 'Season 1'], ['Pre-Season 1', 'Pre-Season']].flatMap(([tab, label]) =>
+    gamesFrom(data[tab]).map(g => ({ ...g, label })));
+  return all.filter(g => g.winner && (sameTeam(g.home, team) || sameTeam(g.away, team)))
+    .slice(-5).reverse()
+    .map(g => ({ ...g, opp: sameTeam(g.home, team) ? g.away : g.home, won: sameTeam(g.winner, team), star: g.stars.toLowerCase().includes(key) }));
+}
+ 
 function findPlayer(name) {
   const key = name.trim().toLowerCase();
-  const out = { name, team: '', roster: [], stats: [] };
-  // roster tab: headers come from the "Name" row above the player
+  const out = { name, team: '', roster: [], stats: [], recent: [] };
   let hdr = null, team = '';
   const rr = data['Rosters'] || [];
   rr.forEach((r, idx) => {
@@ -262,30 +290,37 @@ function findPlayer(name) {
     if (n === 'Name') { hdr = r; return; }
     const nextIsHeader = (rr[idx + 1] || [])[0] === 'Name';
     if (r.some(c => /^wins\b/i.test(c)) || nextIsHeader || /^(draft players|free agents)$/i.test(n)) { team = n; return; }
-    if (n.toLowerCase() === key && !out.roster.length && hdr) {
+    if (n.toLowerCase() === key && !out.roster.length) {
       out.team = team;
-      r.forEach((v, i) => { if (i > 0 && v && hdr[i]) out.roster.push([hdr[i], v]); });
+      r.forEach((v, i) => { const l = (hdr && hdr[i]) || ROSTER_LABELS[i]; if (i > 0 && v !== '' && l) out.roster.push([l, v]); });
     }
   });
-  // player stats tab: use the most recent header-looking row above the match
   let sh = null;
   (data['Player Stats'] || []).forEach(r => {
     const filled = r.filter(c => c);
     if (filled.length >= 3 && filled.every(c => isNaN(Number(c)))) sh = r;
-    if (r[0] && r[0].toLowerCase() === key && sh && !out.stats.length) {
-      r.forEach((v, i) => { if (i > 0 && v !== '' && sh[i]) out.stats.push([sh[i], v]); });
+    if (r[0] && r[0].toLowerCase() === key && !out.stats.length) {
+      r.forEach((v, i) => { const l = (sh && sh[i]) || STAT_LABELS[i]; if (i > 0 && v !== '' && l) out.stats.push([l, v]); });
     }
   });
+  out.recent = recentGames(out.team, name);
   return out;
 }
  
 function openPlayer(name) {
   const p = findPlayer(name);
+  const get = k => (p.roster.find(([l]) => l === k) || [])[1];
+  const chips = [['OVR', get('Overall')], ['PROJ', get('Projected Overall')], ['PTS', get('PTS')], ['GP', get('GP')]]
+    .filter(([, v]) => v !== undefined).map(([l, v]) => `<span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-xs">${l} ${esc(v)}</span>`).join('');
   const tiles = list => list.map(([k, v]) => `<div class="bg-slate-900/80 border border-slate-800 rounded-xl p-3">
     <p class="text-[11px] uppercase text-slate-400">${esc(k)}</p><p class="font-bold text-lg">${esc(v)}</p></div>`).join('');
+  const recent = p.recent.map(g => `<div class="flex items-center justify-between bg-slate-900/80 border border-slate-800 rounded-xl p-3 text-sm">
+    <div><span class="font-bold ${g.won ? 'text-emerald-400' : 'text-red-400'}">${g.won ? 'W' : 'L'}</span> vs ${esc(g.opp)}
+      <span class="text-xs text-slate-500 ml-1">${esc(g.label)} • ${esc(g.game)}</span></div>
+    <div class="text-right">${g.score ? `<span class="font-bold">${esc(g.score)}</span>` : ''}${g.star ? ' <span class="text-amber-300 text-xs">⭐ Star of the game</span>' : ''}</div></div>`).join('');
   const src = head(p.name);
   document.getElementById('modal').innerHTML = `<div class="card rounded-2xl p-6 w-full max-w-2xl mt-10 bg-slate-950" onclick="event.stopPropagation()">
-    <div class="flex items-start justify-between gap-4 mb-5">
+    <div class="flex items-start justify-between gap-4 mb-4">
       <div class="flex items-center gap-4">
         ${src ? `<img src="${src.replace('/40', '/96')}" class="w-20 h-20 rounded-xl bg-slate-800" alt="">` : ''}
         <div><h3 class="font-display text-4xl font-bold leading-none">${esc(p.name)}</h3>
@@ -293,8 +328,11 @@ function openPlayer(name) {
       </div>
       <button onclick="closePlayer()" class="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
     </div>
-    ${p.roster.length ? `<h4 class="font-display text-xl text-sky-400 mb-2">PLAYER INFO</h4><div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-5">${tiles(p.roster)}</div>` : ''}
-    ${p.stats.length ? `<h4 class="font-display text-xl text-sky-400 mb-2">SEASON STATS</h4><div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${tiles(p.stats)}</div>` : ''}
+    ${chips ? `<div class="flex flex-wrap gap-2 mb-5">${chips}</div>` : ''}
+    ${p.stats.length ? `<h4 class="font-display text-xl text-sky-400 mb-2">SEASON STATS</h4><div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-5">${tiles(p.stats)}</div>` : ''}
+    <h4 class="font-display text-xl text-sky-400 mb-2">RECENT GAMES</h4>
+    <div class="space-y-2 mb-5">${recent || '<p class="text-slate-400 text-sm">No completed games for this team yet.</p>'}</div>
+    ${p.roster.length ? `<h4 class="font-display text-xl text-sky-400 mb-2">PLAYER INFO</h4><div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${tiles(p.roster)}</div>` : ''}
     ${!p.roster.length && !p.stats.length ? '<p class="text-slate-400 text-sm">No details found for this player yet.</p>' : ''}
   </div>`;
   const m = document.getElementById('modal');
