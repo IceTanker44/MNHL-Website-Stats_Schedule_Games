@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MNHL | Minecraft National Hockey League</title>
+  <script src="https://tailwindcss.com"></script>
+  <script src="https://cloudflare.com"></script>
+  <link href="https://googleapis.com" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #090d16; color: #f1f5f9; }
+    .font-display { font-family: 'Teko', sans-serif; letter-spacing: 0.04em; }
+    .glass-card { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(56, 189, 248, 0.15); backdrop-filter: blur(10px); }
+    .nav-btn.active { background-color: #0284c7; color: #ffffff; box-shadow: 0 0 15px rgba(2, 132, 199, 0.5); }
+    .team-leafs { border-left: 4px solid #3b82f6; }
+    .team-renegades { border-left: 4px solid #ef4444; }
+    .team-krakens { border-left: 4px solid #14b8a6; }
+    .team-kings { border-left: 4px solid #eab308; }
+    .team-default { border-left: 4px solid #64748b; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Navbar -->
+  <header class="sticky top-0 z-50 bg-slate-950/90 border-b border-slate-800 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center font-display text-2xl font-bold text-white shadow-lg">
+          🏒
+        </div>
+        <div>
+          <h1 class="font-display text-3xl font-bold leading-none text-white tracking-wide">MNHL <span class="text-sky-400">INFO HUB</span></h1>
+          <p class="text-xs text-slate-400">Minecraft National Hockey League • Season 1</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex flex-wrap gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+        <button onclick="switchTab('home')" id="btn-home" class="nav-btn active px-4 py-1.5 rounded-lg text-sm font-semibold transition">Home</button>
+        <button onclick="switchTab('schedule')" id="btn-schedule" class="nav-btn px-4 py-1.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white transition">Schedule & Games</button>
+        <button onclick="switchTab('rosters')" id="btn-rosters" class="nav-btn px-4 py-1.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white transition">Rosters</button>
+        <button onclick="switchTab('stats')" id="btn-stats" class="nav-btn px-4 py-1.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white transition">Player Stats</button>
+        <button onclick="switchTab('draft')" id="btn-draft" class="nav-btn px-4 py-1.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white transition">S1 Draft</button>
+      </nav>
+
+      <div class="flex items-center gap-2">
+        <span id="sync-status" class="text-xs text-emerald-400 flex items-center gap-1.5 bg-emerald-950/50 border border-emerald-800/50 px-3 py-1.5 rounded-full">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Live Sheet Sync
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-8">
+
+    <!-- Loading Banner -->
+    <div id="loader" class="text-center py-20">
+      <div class="inline-block w-10 h-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p class="text-slate-400 font-medium">Loading live data from MNHL Google Sheets...</p>
+    </div>
+
+    <!-- TAB 1: HOME DASHBOARD -->
+    <section id="tab-home" class="hidden space-y-8">
+      <!-- Hero Banner -->
+      <div class="rounded-2xl bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 border border-sky-800/40 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div>
+          <span class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-500/30">Season 1 Active</span>
+          <h2 class="font-display text-4xl md:text-5xl font-bold text-white mt-2">WELCOME TO THE MNHL</h2>
+          <p class="text-slate-300 max-w-xl text-sm md:text-base mt-1">Official standings, live game schedules, team rosters, and player overall trackers synced directly from the league sheet.</p>
+        </div>
+        <div class="flex gap-3">
+          <button onclick="switchTab('schedule')" class="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-sky-500/20">View Full Schedule</button>
+          <button onclick="switchTab('rosters')" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm border border-slate-700 transition">Team Rosters</button>
+        </div>
+      </div>
+
+      <!-- 3-Column Overview Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Standings Card -->
+        <div class="glass-card rounded-2xl p-5 lg:col-span-1">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-display text-2xl font-bold text-white">SEASON 1 STANDINGS</h3>
+            <span class="text-xs text-slate-400">Top 4 Make Playoffs</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="text-slate-400 border-b border-slate-800 text-xs uppercase">
+                  <th class="py-2">#</th>
+                  <th class="py-2">Team</th>
+                  <th class="py-2 text-center">GP</th>
+                  <th class="py-2 text-center">W-L-OTL</th>
+                  <th class="py-2 text-right font-bold text-sky-400">PTS</th>
+                </tr>
+              </thead>
+              <tbody id="home-standings-body" class="divide-y divide-slate-800/60"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Featured / Recent Games -->
+        <div class="glass-card rounded-2xl p-5 lg:col-span-1">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-display text-2xl font-bold text-white">FEATURED MATCHUPS</h3>
+            <button onclick="switchTab('schedule')" class="text-xs text-sky-400 hover:underline">All Games →</button>
+          </div>
+          <div id="home-games-list" class="space-y-3"></div>
+        </div>
+
+        <!-- Top Players by Overall / Points -->
+        <div class="glass-card rounded-2xl p-5 lg:col-span-1">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-display text-2xl font-bold text-white">TOP RATED PLAYERS</h3>
+            <button onclick="switchTab('stats')" class="text-xs text-sky-400 hover:underline">Full Tracker →</button>
+          </div>
+          <div id="home-leaders-list" class="space-y-3"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 2: SCHEDULE & GAMES -->
+    <section id="tab-schedule" class="hidden space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="font-display text-3xl font-bold text-white">SEASON 1 SCHEDULE & RESULTS</h2>
+          <p class="text-sm text-slate-400">Filter between upcoming games, completed matches, and playoff rounds.</p>
+        </div>
+        <div class="flex gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800">
+          <button onclick="filterGames('all')" class="game-filter-btn active px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-600 text-white">All Games</button>
+          <button onclick="filterGames('upcoming')" class="game-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white">Upcoming</button>
+          <button onclick="filterGames('completed')" class="game-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white">Past Results</button>
+        </div>
+      </div>
+
+      <div id="schedule-container" class="space-y-8"></div>
+    </section>
+
+    <!-- TAB 3: TEAM ROSTERS -->
+    <section id="tab-rosters" class="hidden space-y-6">
+      <div>
+        <h2 class="font-display text-3xl font-bold text-white">OFFICIAL TEAM ROSTERS</h2>
+        <p class="text-sm text-slate-400">Active rosters, captaincy badges, and projected overalls.</p>
+      </div>
+      <div id="rosters-grid" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+    </section>
+
+    <!-- TAB 4: PLAYER OVERALL TRACKER -->
+    <section id="tab-stats" class="hidden space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="font-display text-3xl font-bold text-white">PLAYER OVERALL & STAT TRACKER</h2>
+          <p class="text-sm text-slate-400">Complete skater and goalie statistics synced from Player Overall Tracker.</p>
+        </div>
+        <input type="text" id="player-search" onkeyup="renderStatsTable()" placeholder="Search MC username..." class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
+      </div>
+
+      <div class="glass-card rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-900/90 text-slate-300 text-xs uppercase border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Player</th>
+                <th class="py-3 px-3">Pos</th>
+                <th class="py-3 px-3 text-center">GP</th>
+                <th class="py-3 px-3 text-center">G</th>
+                <th class="py-3 px-3 text-center">Shots</th>
+                <th class="py-3 px-3 text-center font-bold text-sky-400">PTS</th>
