@@ -42,10 +42,9 @@ const SHEET_ID = '10r_w3Sy2j50YWrX8LpvGSk7oGGgEaBKN8gJIASP4Fyo';
 const FREE_AGENT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSciVKGc0y7LX-s-YR7Lcsvj23UYpMoIULXDqygMX9CoJQkxag/viewform';
 const DISCORD_URL = 'https://discord.gg/hzamb3jURt';
  
-// Players who get a real skin head. Format: 'name as written in the sheet (lowercase)': 'Java username whose skin to show'
-// Everyone not listed gets a colored initials badge.
+// Optional: Java-account skins. Format: 'name as in the sheet (lowercase)': 'Java username'
+// Most players should use the heads/ folder instead (see avatar()).
 const SKINS = {
-  'icetanker2094': 'IceTanker'
 };
  
 // button label -> exact tab name in the sheet (null = reuses the roster tab)
@@ -77,12 +76,44 @@ async function fetchTab(tab) {
     .filter(r => r.some(c => c !== ''));
 }
  
+const slug = n => (n || '').toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '');
+ 
+// Bedrock skin lookup by gamertag via the GeyserMC Global API (best effort, see notes).
+// Only works for players who have joined a Geyser/Floodgate server before; otherwise returns null.
+const headCache = {};
+function geyserHead(name) {
+  if (headCache[name] !== undefined) return headCache[name];
+  headCache[name] = (async () => {
+    try {
+      const x = await (await fetch(`https://api.geysermc.org/v2/xbox/xuid/${encodeURIComponent(name)}`)).json();
+      if (!x.xuid) return null;
+      const sk = await (await fetch(`https://api.geysermc.org/v2/skin/${x.xuid}`)).json();
+      if (!sk.texture_id) return null;
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = `https://textures.minecraft.net/texture/${sk.texture_id}`; });
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+      g.drawImage(img, 8, 8, 8, 8, 0, 0, 64, 64);   // face
+      g.drawImage(img, 40, 8, 8, 8, 0, 0, 64, 64);  // hat layer
+      return c.toDataURL();
+    } catch (e) { return null; }
+  })();
+  return headCache[name];
+}
+// Order: heads/<name>.png in the repo -> Geyser lookup by gamertag -> optional Java skin -> initials
+async function headFallback(el) {
+  const box = el.parentElement, name = el.dataset.n, java = el.dataset.j;
+  el.remove();
+  let src = await geyserHead(name);
+  if (!src && java) src = `https://mc-heads.net/avatar/${encodeURIComponent(java)}/96`;
+  if (src && box.isConnected) box.insertAdjacentHTML('beforeend', `<img src="${src}" alt="" class="absolute inset-0 w-full h-full rounded-lg object-cover" style="image-rendering:pixelated">`);
+}
 const avatar = (name, size) => {
   const ini = (name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?';
   let h = 0; for (const ch of (name || '')) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  const java = SKINS[(name || '').toLowerCase()];
-  const img = java ? `<img src="https://mc-heads.net/avatar/${encodeURIComponent(java)}/96" alt="" class="absolute inset-0 w-full h-full rounded-lg" onerror="this.remove()">` : '';
-  return `<div class="relative ${size} rounded-lg flex items-center justify-center font-display font-bold text-white shrink-0" style="background:hsl(${h} 55% 35%)">${esc(ini)}${img}</div>`;
+  const java = SKINS[(name || '').toLowerCase()] || '';
+  const img = slug(name) ? `<img src="heads/${slug(name)}.png" alt="" data-n="${esc(name)}" data-j="${esc(java)}" class="absolute inset-0 w-full h-full rounded-lg object-cover" style="image-rendering:pixelated" onerror="headFallback(this)">` : '';
+  return `<div class="relative ${size} rounded-lg flex items-center justify-center font-display font-bold text-white shrink-0 overflow-hidden" style="background:hsl(${h} 55% 35%)">${esc(ini)}${img}</div>`;
 };
  
 // ---------- Rosters + Free Agents ----------
