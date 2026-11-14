@@ -1,4 +1,3 @@
-Index · HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16,7 +15,7 @@ Index · HTML
 </style>
 </head>
 <body class="min-h-screen">
- 
+
 <header class="sticky top-0 z-50 bg-slate-950/90 border-b border-slate-800 backdrop-blur">
   <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
     <h1 class="font-display text-3xl font-bold">🏒 MNHL <span class="text-sky-400">INFO HUB</span></h1>
@@ -24,51 +23,58 @@ Index · HTML
     <div class="flex items-center gap-3"><a href="https://discord.gg/hzamb3jURt" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Join Discord</a><span id="updated" class="text-xs text-slate-400"></span></div>
   </div>
 </header>
- 
+
 <main class="max-w-7xl mx-auto px-4 py-8">
   <div id="loader" class="text-center py-20 text-slate-400">Loading live data from the MNHL Google Sheet…</div>
   <div id="error" class="hidden card rounded-xl p-4 mb-6 text-red-300 text-sm"></div>
   <div id="view" class="space-y-6"></div>
 </main>
- 
+
 <div id="modal" class="hidden fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto"></div>
- 
+
 <footer class="text-center text-xs text-slate-500 py-6">MNHL Info Hub • Powered by Google Sheets &amp; GitHub Pages • <a href="https://discord.gg/hzamb3jURt" target="_blank" rel="noopener" class="text-sky-400 hover:underline">Discord</a></footer>
- 
+
 <script>
 // ====== SETTINGS ======
 const SHEET_ID = '10r_w3Sy2j50YWrX8LpvGSk7oGGgEaBKN8gJIASP4Fyo';
- 
+
 // Paste your Google Form link here (the "viewform" link) to turn on free agent registration.
 const FREE_AGENT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSciVKGc0y7LX-s-YR7Lcsvj23UYpMoIULXDqygMX9CoJQkxag/viewform';
 const DISCORD_URL = 'https://discord.gg/hzamb3jURt';
- 
+
 // Optional: Java-account skins. Format: 'name as in the sheet (lowercase)': 'Java username'
 // Most players should use the heads/ folder instead (see avatar()).
 const SKINS = {
 };
- 
-// button label -> exact tab name in the sheet (null = reuses the roster tab)
+
+// Each button: its label, the sheet tab name(s) to look for, and how to draw it.
+//   tab:  one name, a list of names to try, or 'gid:123' (the number after #gid= in the tab's address; survives renames)
+//   type: roster | freeagents | schedule | stats | draft | table
+// If you rename a tab in the sheet, add its new name to that tab's list here.
+const SEASON = 1;   // <-- change this one number each new season (buttons and tab names follow it)
+
 const TABS = {
-  'Rosters':      "Team Roster's",
-  'Free Agents':  null,
-  'Pre-Season 1': 'Pre-Season 1',
-  'Season 1':     'Season 1',
-  'Player Stats': ['Player Overall Tracker', 'Player Stats', 'Player Tracker', 'Overall Tracker', 'Stats'],
-  'S1 Draft':     ['Season 1 Draft', 'Drafts S1-S1', 'S1 Draft', 'Draft', 'Drafts'],
-  'Mock Drafts':  ['Mock Drafts', 'Mock Draft', 'Mock']
+  'Rosters':     { type: 'roster',     tab: "Team Roster's" },
+  'Free Agents': { type: 'freeagents', tab: null },
+  [`Pre-Season ${SEASON}`]: { type: 'schedule', tab: [`Pre-Season ${SEASON}`, 'Pre-Season Schedule', 'Pre-Seson Schedule', 'Pre-Season'] },
+  [`Season ${SEASON}`]:     { type: 'schedule', tab: [`Season ${SEASON}`, 'Regular Season Schedule', 'Regular Season Secdule', 'Regular Season'] },
+  'Player Stats': { type: 'stats', tab: ['Player Overall Tracker', 'Player Stats', 'Player Tracker', 'Overall Tracker', 'Stats'] },
+  [`S${SEASON} Draft`]: { type: 'draft', tab: [`Season ${SEASON} Draft`, `Drafts S${SEASON}`, `S${SEASON} Draft`, 'Drafts', 'Draft'] },
+  'Mock Drafts':  { type: 'draft', tab: ['Mock Drafts', 'Mock Draft', 'Mock'] }
 };
 // A tab can be a single name or a list of names to try. If a tab isn't found, check the exact name at the bottom of your sheet.
 const REFRESH_MS = 60000;
 // =======================
- 
+
 const data = {};
-let current = 'Rosters';
- 
+let current = Object.keys(TABS)[0];
+const labelsOf = type => Object.keys(TABS).filter(l => TABS[l].type === type);
+const rowsOf = type => { const l = labelsOf(type)[0]; return l ? data[l] : undefined; };
+
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // headers=0 stops Google from merging the top rows into one giant header
-const csvUrl = tab => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=0&sheet=${encodeURIComponent(tab)}`;
- 
+const csvUrl = tab => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=0&${/^gid:\d+$/i.test(tab) ? 'gid=' + tab.slice(4) : 'sheet=' + encodeURIComponent(tab)}`;
+
 async function fetchTab(tab) {
   const res = await fetch(csvUrl(tab) + '&_=' + Date.now());
   if (!res.ok) throw new Error('HTTP ' + res.status + ' for tab "' + tab + '"');
@@ -77,9 +83,9 @@ async function fetchTab(tab) {
     .map(r => r.map(c => (c || '').trim()))
     .filter(r => r.some(c => c !== ''));
 }
- 
+
 const slug = n => (n || '').toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '');
- 
+
 // Bedrock skin lookup by gamertag via the GeyserMC Global API (best effort, see notes).
 // Only works for players who have joined a Geyser/Floodgate server before; otherwise returns null.
 const headCache = {};
@@ -117,7 +123,7 @@ const avatar = (name, size) => {
   const img = slug(name) ? `<img src="heads/${slug(name)}.png" alt="" data-n="${esc(name)}" data-j="${esc(java)}" class="absolute inset-0 w-full h-full rounded-lg object-cover" style="image-rendering:pixelated" onerror="headFallback(this)">` : '';
   return `<div class="relative ${size} rounded-lg flex items-center justify-center font-display font-bold text-white shrink-0 overflow-hidden" style="background:hsl(${h} 55% 35%)">${esc(ini)}${img}</div>`;
 };
- 
+
 // ---------- Rosters + Free Agents ----------
 function parseRosters(rows) {
   const teams = []; let team = null;
@@ -134,7 +140,7 @@ function parseRosters(rows) {
   });
   return teams;
 }
- 
+
 function playerRow(p) {
   const cap = p.num.startsWith('C') ? 'C' : p.num.startsWith('A') ? 'A' : '';
   const rating = Number(p.ovr) > 0 ? p.ovr + ' OVR' : (Number(p.proj) > 0 ? p.proj + ' PROJ' : '');
@@ -151,7 +157,7 @@ function playerRow(p) {
     ${rating ? `<span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-xs">${esc(rating)}</span>` : ''}
   </div>`;
 }
- 
+
 function renderRosters(rows) {
   const teams = parseRosters(rows).filter(t => t.players.length && !/free agents/i.test(t.name));
   if (!teams.length) return `<p class="text-slate-400">No players found yet.</p><p class="text-xs text-slate-500 mt-2">Debug: read ${rows.length} rows. First row: ${esc(JSON.stringify((rows[0]||[]).slice(0,6)))}</p>`;
@@ -164,7 +170,7 @@ function renderRosters(rows) {
       <div class="space-y-2">${t.players.map(playerRow).join('')}</div>
     </div>`).join('') + `</div>`;
 }
- 
+
 function renderFreeAgents(rows) {
   const fa = parseRosters(rows || []).filter(t => /free agents/i.test(t.name)).flatMap(t => t.players);
   const list = fa.length
@@ -179,7 +185,7 @@ function renderFreeAgents(rows) {
     <div class="card rounded-2xl p-5"><h3 class="font-display text-2xl font-bold mb-4">REGISTER AS A FREE AGENT</h3>${form}</div>
   </div>`;
 }
- 
+
 // Game rows: find columns from the "Team Home / Team Away / ..." header row so tabs with extra logo columns still line up
 const GC_DEFAULT = { home: 1, away: 3, time: 4, winner: 5, proj: 6, score: 7, stars: 8 };  // res (how it ended) is optional
 function updateGameCols(r, gc) {
@@ -192,7 +198,7 @@ function updateGameCols(r, gc) {
   gc.res = m.res;                                   // -1 when the tab has no "Win in Reg/OT" column
   return true;
 }
- 
+
 // ---------- Schedule / standings (Season 1 and Pre-Season 1) ----------
 function renderSchedule(rows) {
   let inStats = false, playoff = false, round = '';
@@ -265,7 +271,7 @@ function renderSchedule(rows) {
   }
   return html;
 }
- 
+
 // ---------- Draft board ----------
 function renderDraft(rows) {
   const rounds = []; let cur = null;
@@ -287,7 +293,7 @@ function renderDraft(rows) {
         <div class="text-right text-xs">${p.proj ? `<p class="text-amber-300 font-bold">${esc(p.proj)} PROJ</p>` : ''}<p class="text-slate-500">Last: ${esc(p.last || 'None')}</p></div>
       </div>`).join('')}</div></div>`).join('') + `</div>`;
 }
- 
+
 // ---------- Generic table (stats, drafts, anything else) ----------
 function renderGeneric(rows, searchable) {
   if (!rows.length) return '<p class="text-slate-400">This tab is empty.</p>';
@@ -308,25 +314,26 @@ function renderGeneric(rows, searchable) {
   close();
   return html;
 }
- 
+
 function render() {
   const view = document.getElementById('view');
-  const rows = current === 'Free Agents' ? data['Rosters'] : data[current];
+  const type = TABS[current].type;
+  const rows = type === 'freeagents' ? rowsOf('roster') : data[current];
   if (!rows) { view.innerHTML = '<p class="text-slate-400">This tab wasn’t found. Check that its name in your sheet matches the TABS list at the top of the script.</p>'; return; }
-  const stats = current === 'Player Stats';
+  const stats = type === 'stats';
   const prevQ = document.getElementById('q')?.value || '';
   let body;
-  if (current === 'Rosters') body = renderRosters(rows);
-  else if (current === 'Free Agents') body = renderFreeAgents(rows);
-  else if (/draft/i.test(current)) body = renderDraft(rows) || renderGeneric(rows, false);
-  else if (/season 1$/i.test(current)) body = renderSchedule(rows) || renderGeneric(rows, false);
+  if (type === 'roster') body = renderRosters(rows);
+  else if (type === 'freeagents') body = renderFreeAgents(rows);
+  else if (type === 'draft') body = renderDraft(rows) || renderGeneric(rows, false);
+  else if (type === 'schedule') body = renderSchedule(rows) || renderGeneric(rows, false);
   else body = renderGeneric(rows, stats);
   view.innerHTML = `<h2 class="font-display text-3xl font-bold">${esc(current.toUpperCase())}</h2>` +
     (stats ? `<input id="q" oninput="render()" placeholder="Search player…" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm">` : '') + body;
   const qEl = document.getElementById('q');
   if (qEl && prevQ) { qEl.value = prevQ; qEl.focus(); }
 }
- 
+
 function buildNav() {
   document.getElementById('nav').innerHTML = Object.keys(TABS).map(l =>
     `<button data-tab="${esc(l)}" class="nav-btn px-4 py-1.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white ${l === current ? 'active' : ''}">${esc(l)}</button>`).join('');
@@ -336,17 +343,20 @@ function buildNav() {
     render();
   });
 }
- 
+
 const resolved = {};   // remembers which tab name worked
 const sameRows = (a, b) => JSON.stringify(a.slice(0, 6)) === JSON.stringify(b.slice(0, 6));
 async function load() {
   const err = document.getElementById('error');
   const failed = [];
+  const rosterLabel = labelsOf('roster')[0];
   let base = null;
-  try { base = await fetchTab([].concat(TABS['Rosters'])[0]); data['Rosters'] = base; }
-  catch (e) { failed.push('Rosters (' + e.message + ')'); }
-  await Promise.all(Object.entries(TABS).filter(([l, t]) => t && l !== 'Rosters').map(async ([label, tab]) => {
-    const names = [].concat(tab); if (resolved[label]) names.unshift(resolved[label]);
+  if (rosterLabel) {
+    try { base = await fetchTab([].concat(TABS[rosterLabel].tab)[0]); data[rosterLabel] = base; }
+    catch (e) { failed.push(rosterLabel + ' (' + e.message + ')'); }
+  }
+  await Promise.all(Object.entries(TABS).filter(([l, c]) => c.tab && l !== rosterLabel).map(async ([label, c]) => {
+    const names = [].concat(c.tab); if (resolved[label]) names.unshift(resolved[label]);
     for (const n of names) {
       try {
         const rows = await fetchTab(n);
@@ -363,15 +373,15 @@ async function load() {
   document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
   render();
 }
- 
+
 // ---------- Player pages (click any player) ----------
 // Google's CSV feed blanks header cells in number-heavy columns, so fall back to known labels.
 const ROSTER_LABELS = ['Name', 'Number', 'Position', 'Overall', 'Projected Overall', 'PTS', 'Rank', 'GP', 'PTS Per Game', '3 Stars of the Game'];
 const STAT_LABELS = ['Player', 'Pos', 'GP', 'Goals', 'Shots', 'Points', 'Hits', 'Faceoff Wins', 'Faceoffs', 'Blocked Shots', 'Shots Against', 'Penalties', 'Overall'];
- 
+
 const teamKey = n => (n || '').toLowerCase().replace(/rengades/g, 'renegades').replace(/[^a-z]/g, '');
 const sameTeam = (a, b) => { a = teamKey(a); b = teamKey(b); return a && b && (a.includes(b) || b.includes(a)); };
- 
+
 function gamesFrom(rows) {
   const out = []; let inStats = false; const gc = { ...GC_DEFAULT };
   (rows || []).forEach(r => {
@@ -384,22 +394,21 @@ function gamesFrom(rows) {
   });
   return out;
 }
- 
+
 function recentGames(team, name) {
   if (!team) return [];
   const key = name.toLowerCase();
-  const all = [['Season 1', 'Season 1'], ['Pre-Season 1', 'Pre-Season']].flatMap(([tab, label]) =>
-    gamesFrom(data[tab]).map(g => ({ ...g, label })));
+  const all = labelsOf('schedule').flatMap(l => gamesFrom(data[l]).map(g => ({ ...g, label: l })));
   return all.filter(g => g.winner && (sameTeam(g.home, team) || sameTeam(g.away, team)))
     .slice(-5).reverse()
     .map(g => ({ ...g, opp: sameTeam(g.home, team) ? g.away : g.home, won: sameTeam(g.winner, team), star: g.stars.toLowerCase().includes(key) }));
 }
- 
+
 function findPlayer(name) {
   const key = name.trim().toLowerCase();
   const out = { name, team: '', roster: [], stats: [], recent: [] };
   let hdr = null, team = '';
-  const rr = data['Rosters'] || [];
+  const rr = rowsOf('roster') || [];
   rr.forEach((r, idx) => {
     const n = r[0];
     if (!n || n === "Team Roster's") return;
@@ -412,7 +421,7 @@ function findPlayer(name) {
     }
   });
   let sh = null;
-  (data['Player Stats'] || []).forEach(r => {
+  (rowsOf('stats') || []).forEach(r => {
     const filled = r.filter(c => c);
     if (filled.length >= 3 && filled.every(c => isNaN(Number(c)))) sh = r;
     if (r[0] && r[0].toLowerCase() === key && !out.stats.length) {
@@ -422,7 +431,7 @@ function findPlayer(name) {
   out.recent = recentGames(out.team, name);
   return out;
 }
- 
+
 function openPlayer(name) {
   const p = findPlayer(name);
   const get = k => (p.roster.find(([l]) => l === k) || [])[1];
@@ -456,7 +465,7 @@ function openPlayer(name) {
 function closePlayer() { document.getElementById('modal').classList.add('hidden'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
 document.addEventListener('click', e => { const el = e.target.closest('[data-player]'); if (el) openPlayer(el.dataset.player); });
- 
+
 buildNav();
 load();
 setInterval(load, REFRESH_MS);
