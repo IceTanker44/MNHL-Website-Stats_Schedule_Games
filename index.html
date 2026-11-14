@@ -20,7 +20,7 @@
   <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
     <h1 class="font-display text-3xl font-bold">🏒 MNHL <span class="text-sky-400">INFO HUB</span></h1>
     <nav id="nav" class="flex flex-wrap gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800"></nav>
-    <span id="updated" class="text-xs text-slate-400"></span>
+    <div class="flex items-center gap-3"><a href="https://discord.gg/hzamb3jURt" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Join Discord</a><span id="updated" class="text-xs text-slate-400"></span></div>
   </div>
 </header>
  
@@ -30,14 +30,15 @@
   <div id="view" class="space-y-6"></div>
 </main>
  
-<footer class="text-center text-xs text-slate-500 py-6">MNHL Info Hub • Powered by Google Sheets &amp; GitHub Pages</footer>
+<footer class="text-center text-xs text-slate-500 py-6">MNHL Info Hub • Powered by Google Sheets &amp; GitHub Pages • <a href="https://discord.gg/hzamb3jURt" target="_blank" rel="noopener" class="text-sky-400 hover:underline">Discord</a></footer>
  
 <script>
 // ====== SETTINGS ======
 const SHEET_ID = '10r_w3Sy2j50YWrX8LpvGSk7oGGgEaBKN8gJIASP4Fyo';
  
 // Paste your Google Form link here (the "viewform" link) to turn on free agent registration.
-const FREE_AGENT_FORM_URL = '';
+const FREE_AGENT_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSciVKGc0y7LX-s-YR7Lcsvj23UYpMoIULXDqygMX9CoJQkxag/viewform';
+const DISCORD_URL = 'https://discord.gg/hzamb3jURt';
  
 // button label -> exact tab name in the sheet (null = reuses the roster tab)
 const TABS = {
@@ -124,7 +125,7 @@ function renderFreeAgents(rows) {
     : '<p class="text-slate-400 text-sm">No free agents listed right now.</p>';
   const form = FREE_AGENT_FORM_URL
     ? `<iframe src="${esc(FREE_AGENT_FORM_URL)}${FREE_AGENT_FORM_URL.includes('?') ? '&' : '?'}embedded=true" class="w-full rounded-xl bg-white" style="height:900px" frameborder="0">Loading…</iframe>
-       <a href="${esc(FREE_AGENT_FORM_URL)}" target="_blank" rel="noopener" class="inline-block mt-3 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm">Open form in new tab</a>`
+       <a href="${esc(FREE_AGENT_FORM_URL)}" target="_blank" rel="noopener" class="inline-block mt-3 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm">Open form in new tab</a> <a href="${DISCORD_URL}" target="_blank" rel="noopener" class="inline-block mt-3 ml-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm">Join the Discord</a>`
     : '<p class="text-slate-400 text-sm">Free agent registration isn’t open yet. Check back soon!</p>';
   return `<div class="grid lg:grid-cols-2 gap-6">
     <div class="card rounded-2xl p-5"><h3 class="font-display text-2xl font-bold mb-4">AVAILABLE FREE AGENTS</h3>${list}</div>
