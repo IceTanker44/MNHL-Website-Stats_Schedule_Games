@@ -1,3 +1,4 @@
+Index · HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -53,10 +54,11 @@ const TABS = {
   'Free Agents':  null,
   'Pre-Season 1': 'Pre-Season 1',
   'Season 1':     'Season 1',
-  'Player Stats': 'Player Overall Tracker',
-  'S1 Draft':     'Drafts S1-S1',
-  'Mock Drafts':  'Mock Drafts'
+  'Player Stats': ['Player Overall Tracker', 'Player Stats', 'Player Tracker', 'Overall Tracker', 'Stats'],
+  'S1 Draft':     ['Season 1 Draft', 'Drafts S1-S1', 'S1 Draft', 'Draft', 'Drafts'],
+  'Mock Drafts':  ['Mock Drafts', 'Mock Draft', 'Mock']
 };
+// A tab can be a single name or a list of names to try. If a tab isn't found, check the exact name at the bottom of your sheet.
 const REFRESH_MS = 60000;
 // =======================
  
@@ -126,7 +128,7 @@ function parseRosters(rows) {
     const hasWins = r.some(c => /^wins\b/i.test(c));
     if (hasWins || nextIsHeader || /^(draft players|free agents)$/i.test(name)) {
       team = { name, record: r.find(c => /^wins\b/i.test(c)) || '', players: [] }; teams.push(team);
-    } else if (team && name !== '???') {
+    } else if (team) {
       team.players.push({ name, num: r[1] || '', pos: r[2] || 'Any', ovr: r[3] || '0', proj: r[4] || '0' });
     }
   });
@@ -137,11 +139,12 @@ function playerRow(p) {
   const cap = p.num.startsWith('C') ? 'C' : p.num.startsWith('A') ? 'A' : '';
   const rating = Number(p.ovr) > 0 ? p.ovr + ' OVR' : (Number(p.proj) > 0 ? p.proj + ' PROJ' : '');
   const num = p.num.replace(/^[CA]/, '').replace('#', '');
-  return `<div data-player="${esc(p.name)}" class="flex items-center justify-between bg-slate-900/70 p-2.5 rounded-xl border border-slate-800 cursor-pointer hover:border-sky-500 transition">
+  const unk = p.name === '???';
+  return `<div ${unk ? '' : `data-player="${esc(p.name)}"`} class="flex items-center justify-between bg-slate-900/70 p-2.5 rounded-xl border border-slate-800 transition ${unk ? 'opacity-80' : 'cursor-pointer hover:border-sky-500'}">
     <div class="flex items-center gap-3">
       ${avatar(p.name, 'w-9 h-9 text-lg')}
       <div>
-        <p class="font-bold text-sm">${esc(p.name)} ${cap ? `<span class="ml-1 px-1.5 text-[10px] font-black bg-amber-500 text-slate-950 rounded">${cap}</span>` : ''}</p>
+        <p class="font-bold text-sm ${unk ? 'italic text-slate-300' : ''}">${unk ? 'Unknown Player' : esc(p.name)} ${cap ? `<span class="ml-1 px-1.5 text-[10px] font-black bg-amber-500 text-slate-950 rounded">${cap}</span>` : ''}</p>
         <p class="text-xs text-slate-400">${num ? '#' + esc(num) + ' • ' : ''}${esc(p.pos)}</p>
       </div>
     </div>
@@ -263,6 +266,28 @@ function renderSchedule(rows) {
   return html;
 }
  
+// ---------- Draft board ----------
+function renderDraft(rows) {
+  const rounds = []; let cur = null;
+  for (const r of rows) {
+    const filled = r.filter(x => x);
+    if (/^round\b/i.test(r[0]) && filled.length === 1) { cur = { name: r[0], picks: [] }; rounds.push(cur); continue; }
+    if (!cur || filled.length < 2 || /^team$/i.test(r[0])) continue;
+    cur.picks.push({ team: r[0], player: r[1] || '???', pos: r[2] || 'Any', num: r[3] || '', proj: r[4] || '', last: r[5] || '' });
+  }
+  if (!rounds.length) return null;
+  return `<div class="grid lg:grid-cols-2 gap-6">` + rounds.map(rd => `
+    <div class="card rounded-2xl p-5"><h3 class="font-display text-2xl font-bold text-sky-400 mb-4">${esc(rd.name.toUpperCase())}</h3>
+    <div class="space-y-2">${rd.picks.map((p, i) => `
+      <div class="flex items-center gap-3 bg-slate-900/70 p-2.5 rounded-xl border border-slate-800">
+        <span class="w-7 text-center font-display text-2xl text-sky-400">${i + 1}</span>
+        ${avatar(p.player, 'w-9 h-9 text-lg')}
+        <div class="flex-1 min-w-0"><p class="font-bold text-sm ${p.player === '???' ? 'italic text-slate-300' : ''}">${p.player === '???' ? 'Unknown Player' : esc(p.player)} ${p.num && p.num !== '#' ? `<span class="text-xs font-normal text-slate-400">${esc(p.num)}</span>` : ''}</p>
+          <p class="text-xs text-slate-400">${esc(p.team)} • ${esc(p.pos)}</p></div>
+        <div class="text-right text-xs">${p.proj ? `<p class="text-amber-300 font-bold">${esc(p.proj)} PROJ</p>` : ''}<p class="text-slate-500">Last: ${esc(p.last || 'None')}</p></div>
+      </div>`).join('')}</div></div>`).join('') + `</div>`;
+}
+ 
 // ---------- Generic table (stats, drafts, anything else) ----------
 function renderGeneric(rows, searchable) {
   if (!rows.length) return '<p class="text-slate-400">This tab is empty.</p>';
@@ -287,12 +312,13 @@ function renderGeneric(rows, searchable) {
 function render() {
   const view = document.getElementById('view');
   const rows = current === 'Free Agents' ? data['Rosters'] : data[current];
-  if (!rows) { view.innerHTML = '<p class="text-slate-400">This tab couldn’t be loaded.</p>'; return; }
+  if (!rows) { view.innerHTML = '<p class="text-slate-400">This tab wasn’t found. Check that its name in your sheet matches the TABS list at the top of the script.</p>'; return; }
   const stats = current === 'Player Stats';
   const prevQ = document.getElementById('q')?.value || '';
   let body;
   if (current === 'Rosters') body = renderRosters(rows);
   else if (current === 'Free Agents') body = renderFreeAgents(rows);
+  else if (/draft/i.test(current)) body = renderDraft(rows) || renderGeneric(rows, false);
   else if (/season 1$/i.test(current)) body = renderSchedule(rows) || renderGeneric(rows, false);
   else body = renderGeneric(rows, stats);
   view.innerHTML = `<h2 class="font-display text-3xl font-bold">${esc(current.toUpperCase())}</h2>` +
@@ -311,12 +337,26 @@ function buildNav() {
   });
 }
  
+const resolved = {};   // remembers which tab name worked
+const sameRows = (a, b) => JSON.stringify(a.slice(0, 6)) === JSON.stringify(b.slice(0, 6));
 async function load() {
   const err = document.getElementById('error');
-  const entries = Object.entries(TABS).filter(([, tab]) => tab);
-  const results = await Promise.allSettled(entries.map(async ([label, tab]) => [label, await fetchTab(tab)]));
   const failed = [];
-  results.forEach((r, i) => r.status === 'fulfilled' ? data[r.value[0]] = r.value[1] : failed.push(entries[i][0] + ' (' + (r.reason?.message || r.reason) + ')'));
+  let base = null;
+  try { base = await fetchTab([].concat(TABS['Rosters'])[0]); data['Rosters'] = base; }
+  catch (e) { failed.push('Rosters (' + e.message + ')'); }
+  await Promise.all(Object.entries(TABS).filter(([l, t]) => t && l !== 'Rosters').map(async ([label, tab]) => {
+    const names = [].concat(tab); if (resolved[label]) names.unshift(resolved[label]);
+    for (const n of names) {
+      try {
+        const rows = await fetchTab(n);
+        if (base && sameRows(rows, base)) continue;   // Google returns the first tab when a name doesn't exist
+        resolved[label] = n; data[label] = rows; return;
+      } catch (e) { /* try next name */ }
+    }
+    delete data[label];
+    failed.push(label + ' (tab not found, check its exact name)');
+  }));
   document.getElementById('loader').classList.add('hidden');
   err.classList.toggle('hidden', !failed.length);
   if (failed.length) err.textContent = 'Could not load: ' + failed.join('; ');
