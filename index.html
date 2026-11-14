@@ -51,17 +51,20 @@ const SKINS = {
 //   tab:  one name, a list of names to try, or 'gid:123' (the number after #gid= in the tab's address; survives renames)
 //   type: roster | freeagents | schedule | stats | draft | table
 // If you rename a tab in the sheet, add its new name to that tab's list here.
-const SEASON = 1;   // <-- change this one number each new season (buttons and tab names follow it)
+// Which season to show: 'auto' picks the newest season it finds in your sheet
+// (it looks for tabs named "Season 2", "Pre-Season 2", ...). Or type a number like 2 to force it.
+const SEASON = 'auto';
 
-const TABS = {
+const makeTabs = n => ({
   'Rosters':     { type: 'roster',     tab: "Team Roster's" },
   'Free Agents': { type: 'freeagents', tab: null },
-  [`Pre-Season ${SEASON}`]: { type: 'schedule', tab: [`Pre-Season ${SEASON}`, 'Pre-Season Schedule', 'Pre-Seson Schedule', 'Pre-Season'] },
-  [`Season ${SEASON}`]:     { type: 'schedule', tab: [`Season ${SEASON}`, 'Regular Season Schedule', 'Regular Season Secdule', 'Regular Season'] },
+  [`Pre-Season ${n}`]: { type: 'schedule', tab: [`Pre-Season ${n}`, 'Pre-Season Schedule', 'Pre-Seson Schedule', 'Pre-Season'] },
+  [`Season ${n}`]:     { type: 'schedule', tab: [`Season ${n}`, 'Regular Season Schedule', 'Regular Season Secdule', 'Regular Season'] },
   'Player Stats': { type: 'stats', tab: ['Player Overall Tracker', 'Player Stats', 'Player Tracker', 'Overall Tracker', 'Stats'] },
-  [`S${SEASON} Draft`]: { type: 'draft', tab: [`Season ${SEASON} Draft`, `Drafts S${SEASON}`, `S${SEASON} Draft`, 'Drafts', 'Draft'] },
+  [`S${n} Draft`]: { type: 'draft', tab: [`Season ${n} Draft`, `Drafts S${n}`, `S${n} Draft`, 'Drafts', 'Draft'] },
   'Mock Drafts':  { type: 'draft', tab: ['Mock Drafts', 'Mock Draft', 'Mock'] }
-};
+});
+let TABS = makeTabs(SEASON === 'auto' ? 1 : SEASON);
 // A tab can be a single name or a list of names to try. If a tab isn't found, check the exact name at the bottom of your sheet.
 const REFRESH_MS = 60000;
 // =======================
@@ -466,9 +469,26 @@ function closePlayer() { document.getElementById('modal').classList.add('hidden'
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
 document.addEventListener('click', e => { const el = e.target.closest('[data-player]'); if (el) openPlayer(el.dataset.player); });
 
-buildNav();
-load();
-setInterval(load, REFRESH_MS);
+// Newest season = highest N that has a "Season N" or "Pre-Season N" tab (Google returns the first tab for names that don't exist)
+async function detectSeason() {
+  if (SEASON !== 'auto') return SEASON;
+  const base = await fetchTab([].concat(TABS['Rosters'].tab)[0]);
+  const hits = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map(async n => {
+    for (const name of [`Season ${n}`, `Pre-Season ${n}`]) {
+      try { if (!sameRows(await fetchTab(name), base)) return n; } catch (e) { /* not there */ }
+    }
+    return 0;
+  }));
+  return Math.max(1, ...hits);
+}
+async function init() {
+  try { TABS = makeTabs(await detectSeason()); } catch (e) { /* keep defaults */ }
+  current = Object.keys(TABS)[0];
+  buildNav();
+  await load();
+  setInterval(load, REFRESH_MS);
+}
+init();
 </script>
 </body>
 </html>
