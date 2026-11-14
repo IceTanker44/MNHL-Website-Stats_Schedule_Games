@@ -8,9 +8,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@500;700&display=swap" rel="stylesheet">
 <style>
-  body { font-family: 'Inter', sans-serif; background:#090d16; color:#f1f5f9; }
-  .font-display { font-family: 'Teko', sans-serif; letter-spacing: .04em; }
-  .card { background: rgba(15,23,42,.8); border:1px solid rgba(56,189,248,.15); }
+  body { font-family:'Inter',sans-serif; background:#090d16; color:#f1f5f9; }
+  .font-display { font-family:'Teko',sans-serif; letter-spacing:.04em; }
+  .card { background:rgba(15,23,42,.8); border:1px solid rgba(56,189,248,.15); }
   .nav-btn.active { background:#0284c7; color:#fff; }
 </style>
 </head>
@@ -26,8 +26,8 @@
  
 <main class="max-w-7xl mx-auto px-4 py-8">
   <div id="loader" class="text-center py-20 text-slate-400">Loading live data from the MNHL Google Sheet…</div>
-  <div id="error" class="hidden card rounded-xl p-6 text-red-300"></div>
-  <div id="view" class="space-y-8"></div>
+  <div id="error" class="hidden card rounded-xl p-4 mb-6 text-red-300 text-sm"></div>
+  <div id="view" class="space-y-6"></div>
 </main>
  
 <footer class="text-center text-xs text-slate-500 py-6">MNHL Info Hub • Powered by Google Sheets &amp; GitHub Pages</footer>
@@ -35,23 +35,29 @@
 <script>
 // ====== SETTINGS ======
 const SHEET_ID = '10r_w3Sy2j50YWrX8LpvGSk7oGGgEaBKN8gJIASP4Fyo';
-// label shown on the button -> exact tab name in your sheet
+ 
+// Paste your Google Form link here (the "viewform" link) to turn on free agent registration.
+const FREE_AGENT_FORM_URL = '';
+ 
+// button label -> exact tab name in the sheet (null = reuses the roster tab)
 const TABS = {
-  'Rosters':        "Team Roster's",
-  'Season 1':       'Season 1',
-  'Pre-Season 1':   'Pre-Season 1',
-  'Player Stats':   'Player Overall Tracker',
-  'S1 Draft':       'Drafts S1-S1',
-  'Mock Drafts':    'Mock Drafts'
+  'Rosters':      "Team Roster's",
+  'Free Agents':  null,
+  'Season 1':     'Season 1',
+  'Pre-Season 1': 'Pre-Season 1',
+  'Player Stats': 'Player Overall Tracker',
+  'S1 Draft':     'Drafts S1-S1',
+  'Mock Drafts':  'Mock Drafts'
 };
-const REFRESH_MS = 60000; // re-pull the sheet every 60 seconds
+const REFRESH_MS = 60000;
 // =======================
  
 const data = {};
 let current = 'Rosters';
  
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const csvUrl = tab => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+// headers=0 stops Google from merging the top rows into one giant header
+const csvUrl = tab => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&headers=0&sheet=${encodeURIComponent(tab)}`;
  
 async function fetchTab(tab) {
   const res = await fetch(csvUrl(tab) + '&_=' + Date.now());
@@ -62,102 +68,150 @@ async function fetchTab(tab) {
     .filter(r => r.some(c => c !== ''));
 }
  
-function head(name) {
-  const clean = (name || '').replace(/[^A-Za-z0-9_]/g, '');
-  return clean ? `https://mc-heads.net/avatar/${clean}/40` : '';
-}
+const head = n => { const c = (n || '').replace(/[^A-Za-z0-9_]/g, ''); return c ? `https://mc-heads.net/avatar/${c}/40` : ''; };
  
-// ---------- Rosters (team header row has "Wins ..." in it) ----------
-function renderRosters(rows) {
-  const teams = [];
-  let team = null;
+// ---------- Rosters + Free Agents ----------
+function parseRosters(rows) {
+  const teams = []; let team = null;
   for (const r of rows) {
     const name = r[0];
-    if (!name || name === "Team Roster's") continue;
+    if (!name || name === "Team Roster's" || name === 'Name') continue;
     if (r.some(c => /^wins\b/i.test(c))) {
-      team = { name, record: r.find(c => /^wins\b/i.test(c)), players: [] };
-      teams.push(team);
+      team = { name, record: r.find(c => /^wins\b/i.test(c)), players: [] }; teams.push(team);
     } else if (/^(draft players|free agents)$/i.test(name)) {
-      team = { name, record: '', players: [] };
-      teams.push(team);
-    } else if (name === 'Name') {
-      continue;
+      team = { name, record: '', players: [] }; teams.push(team);
     } else if (team && name !== '???') {
-      team.players.push({ name, num: r[1] || '', pos: r[2] || 'Any', ovr: r[3] || '0', proj: r[4] || '0', pts: r[5] || '0' });
+      team.players.push({ name, num: r[1] || '', pos: r[2] || 'Any', ovr: r[3] || '0', proj: r[4] || '0' });
     }
   }
-  const shown = teams.filter(t => t.players.length);
-  if (!shown.length) return '<p class="text-slate-400">No players found yet.</p>';
-  return `<div class="grid md:grid-cols-2 gap-6">` + shown.map(t => `
+  return teams;
+}
+ 
+function playerRow(p) {
+  const cap = p.num.startsWith('C') ? 'C' : p.num.startsWith('A') ? 'A' : '';
+  const rating = Number(p.ovr) > 0 ? p.ovr + ' OVR' : (Number(p.proj) > 0 ? p.proj + ' PROJ' : '');
+  const src = head(p.name);
+  const num = p.num.replace(/^[CA]/, '').replace('#', '');
+  return `<div class="flex items-center justify-between bg-slate-900/70 p-2.5 rounded-xl border border-slate-800">
+    <div class="flex items-center gap-3">
+      ${src ? `<img src="${src}" class="w-9 h-9 rounded-lg bg-slate-800" alt="" loading="lazy">` : ''}
+      <div>
+        <p class="font-bold text-sm">${esc(p.name)} ${cap ? `<span class="ml-1 px-1.5 text-[10px] font-black bg-amber-500 text-slate-950 rounded">${cap}</span>` : ''}</p>
+        <p class="text-xs text-slate-400">${num ? '#' + esc(num) + ' • ' : ''}${esc(p.pos)}</p>
+      </div>
+    </div>
+    ${rating ? `<span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-xs">${esc(rating)}</span>` : ''}
+  </div>`;
+}
+ 
+function renderRosters(rows) {
+  const teams = parseRosters(rows).filter(t => t.players.length && !/free agents/i.test(t.name));
+  if (!teams.length) return '<p class="text-slate-400">No players found yet.</p>';
+  return `<div class="grid md:grid-cols-2 gap-6">` + teams.map(t => `
     <div class="card rounded-2xl p-5">
       <div class="flex justify-between items-center mb-4">
         <h3 class="font-display text-2xl font-bold">${esc(t.name)}</h3>
-        <span class="text-xs text-slate-400">${esc(t.record)}</span>
+        <span class="text-xs text-slate-400">${esc(t.record)} • ${t.players.length} players</span>
       </div>
-      <div class="space-y-2">${t.players.map(p => {
-        const cap = p.num.startsWith('C') ? 'C' : p.num.startsWith('A') ? 'A' : '';
-        const rating = Number(p.ovr) > 0 ? p.ovr + ' OVR' : p.proj + ' PROJ';
-        const src = head(p.name);
-        return `<div class="flex items-center justify-between bg-slate-900/70 p-2.5 rounded-xl border border-slate-800">
-          <div class="flex items-center gap-3">
-            ${src ? `<img src="${src}" class="w-9 h-9 rounded-lg bg-slate-800" alt="" loading="lazy">` : ''}
-            <div>
-              <p class="font-bold text-sm">${esc(p.name)} ${cap ? `<span class="ml-1 px-1.5 text-[10px] font-black bg-amber-500 text-slate-950 rounded">${cap}</span>` : ''}</p>
-              <p class="text-xs text-slate-400">${esc(p.num.replace(/^[CA]/, ''))} • ${esc(p.pos)}</p>
-            </div>
-          </div>
-          <span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-xs">${esc(rating)}</span>
-        </div>`;
-      }).join('')}</div>
+      <div class="space-y-2">${t.players.map(playerRow).join('')}</div>
     </div>`).join('') + `</div>`;
 }
  
-// ---------- Generic renderer: works for any tab layout ----------
-// A row with only one filled cell = section title. The row after it = column headers.
+function renderFreeAgents(rows) {
+  const fa = parseRosters(rows || []).filter(t => /free agents/i.test(t.name)).flatMap(t => t.players);
+  const list = fa.length
+    ? `<div class="space-y-2">${fa.map(playerRow).join('')}</div>`
+    : '<p class="text-slate-400 text-sm">No free agents listed right now.</p>';
+  const form = FREE_AGENT_FORM_URL
+    ? `<iframe src="${esc(FREE_AGENT_FORM_URL)}${FREE_AGENT_FORM_URL.includes('?') ? '&' : '?'}embedded=true" class="w-full rounded-xl bg-white" style="height:900px" frameborder="0">Loading…</iframe>
+       <a href="${esc(FREE_AGENT_FORM_URL)}" target="_blank" rel="noopener" class="inline-block mt-3 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm">Open form in new tab</a>`
+    : '<p class="text-slate-400 text-sm">Free agent registration isn’t open yet. Check back soon!</p>';
+  return `<div class="grid lg:grid-cols-2 gap-6">
+    <div class="card rounded-2xl p-5"><h3 class="font-display text-2xl font-bold mb-4">AVAILABLE FREE AGENTS</h3>${list}</div>
+    <div class="card rounded-2xl p-5"><h3 class="font-display text-2xl font-bold mb-4">REGISTER AS A FREE AGENT</h3>${form}</div>
+  </div>`;
+}
+ 
+// ---------- Schedule / standings (Season 1 and Pre-Season 1) ----------
+function renderSchedule(rows) {
+  let stage = 'Regular Season', inStats = false;
+  const games = [], stand = [];
+  for (const r of rows) {
+    const [a, b, c, d, e, f, g, h, i] = r;
+    const filled = r.filter(x => x !== '');
+    if (/^game\s*\d+/i.test(a) && !inStats) {
+      const win = /^(tbd|winner|wins?)$/i.test(f || '') ? '' : (f || '');
+      games.push({ stage, game: a, home: b || 'TBD', away: d || c || 'TBD', time: e || 'TBD', winner: win, proj: g, score: h, stars: i });
+    } else if (filled.length === 1 && a) {
+      if (/^stats$/i.test(a)) inStats = true;
+      else if (!/^(games|team)$/i.test(a)) { stage = a; inStats = false; }
+    } else if (a && /^\d+$/.test(b || '') && !/^game/i.test(a)) {
+      stand.push({ team: a, place: +b, pts: d || 0, gp: e || 0, w: f || 0, l: g || 0, otl: h || 0 });
+    }
+  }
+  if (!games.length && !stand.length) return null;
+  stand.sort((x, y) => x.place - y.place);
+  let html = '';
+  if (stand.length) html += `<div class="card rounded-2xl overflow-x-auto p-2"><table class="w-full text-left text-sm">
+    <thead><tr class="text-xs uppercase text-slate-400 border-b border-slate-800"><th class="p-2">#</th><th class="p-2">Team</th><th class="p-2">GP</th><th class="p-2">W</th><th class="p-2">L</th><th class="p-2">OTL</th><th class="p-2 text-sky-400">PTS</th></tr></thead><tbody class="divide-y divide-slate-800/60">
+    ${stand.map(t => `<tr><td class="p-2">${t.place}</td><td class="p-2 font-bold">${esc(t.team)}</td><td class="p-2">${esc(t.gp)}</td><td class="p-2">${esc(t.w)}</td><td class="p-2">${esc(t.l)}</td><td class="p-2">${esc(t.otl)}</td><td class="p-2 font-bold text-sky-400">${esc(t.pts)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  [...new Set(games.map(x => x.stage))].forEach(s => {
+    html += `<h3 class="font-display text-2xl font-bold text-sky-400 mt-6">${esc(s.toUpperCase())}</h3><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">` +
+      games.filter(x => x.stage === s).map(x => {
+        const done = x.winner !== '';
+        const stars = x.stars && !x.stars.includes('???') ? `<p class="text-xs text-amber-300 mt-1">⭐ ${esc(x.stars)}</p>` : '';
+        return `<div class="card rounded-xl p-3.5">
+          <div class="flex justify-between text-xs text-slate-400 mb-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>
+            <span class="px-2 py-0.5 rounded font-bold ${done ? 'bg-emerald-500/20 text-emerald-300' : 'bg-sky-500/20 text-sky-300'}">${done ? 'FINAL ' + esc(x.score || '') : esc(x.time)}</span></div>
+          <div class="flex justify-between items-center font-bold text-sm"><span>${esc(x.home)}</span><span class="text-xs text-slate-500">VS</span><span>${esc(x.away)}</span></div>
+          ${done ? `<p class="text-xs text-emerald-300 mt-1">Winner: ${esc(x.winner)}</p>` : (x.proj ? `<p class="text-xs text-slate-400 mt-1">Projected: ${esc(x.proj)}</p>` : '')}${stars}</div>`;
+      }).join('') + `</div>`;
+  });
+  return html;
+}
+ 
+// ---------- Generic table (stats, drafts, anything else) ----------
 function renderGeneric(rows, searchable) {
   if (!rows.length) return '<p class="text-slate-400">This tab is empty.</p>';
+  const keep = [...Array(Math.max(...rows.map(r => r.length))).keys()].filter(i => rows.some(r => r[i]));
   const q = searchable ? (document.getElementById('q')?.value || '').toLowerCase() : '';
-  let html = '', open = false, nextIsHeader = true;
+  let html = '', open = false, hdr = true;
   const close = () => { if (open) { html += '</tbody></table></div>'; open = false; } };
-  const begin = () => { if (!open) { html += '<div class="card rounded-2xl overflow-x-auto"><table class="w-full text-left text-sm"><tbody class="divide-y divide-slate-800/60">'; open = true; } };
   for (const r of rows) {
-    const filled = r.filter(c => c !== '');
-    if (filled.length === 1 && r[0] !== '') {
-      close();
-      html += `<h3 class="font-display text-2xl font-bold text-sky-400 mt-6 mb-2">${esc(r[0])}</h3>`;
-      nextIsHeader = true;
-      continue;
+    if (r.filter(c => c).length === 1 && r[0]) {
+      close(); html += `<h3 class="font-display text-2xl font-bold text-sky-400 mt-6">${esc(r[0])}</h3>`; hdr = true; continue;
     }
-    if (q && !r.join(' ').toLowerCase().includes(q) && !nextIsHeader) continue;
-    begin();
-    const tag = nextIsHeader ? 'th' : 'td';
-    const cls = nextIsHeader ? 'py-2 px-3 text-xs uppercase text-slate-300 bg-slate-900/90' : 'py-2 px-3';
-    html += '<tr>' + r.map(c => `<${tag} class="${cls}">${esc(c)}</${tag}>`).join('') + '</tr>';
-    nextIsHeader = false;
+    if (q && !hdr && !r.join(' ').toLowerCase().includes(q)) continue;
+    if (!open) { html += '<div class="card rounded-2xl overflow-x-auto"><table class="w-full text-left text-sm"><tbody class="divide-y divide-slate-800/60">'; open = true; }
+    const t = hdr ? 'th' : 'td';
+    html += '<tr>' + keep.map(i => `<${t} class="py-2 px-3 whitespace-nowrap ${hdr ? 'text-xs uppercase text-slate-300 bg-slate-900/90' : ''}">${esc(r[i])}</${t}>`).join('') + '</tr>';
+    hdr = false;
   }
   close();
   return html;
 }
  
 function render() {
-  const rows = data[current];
   const view = document.getElementById('view');
-  if (!rows) { view.innerHTML = ''; return; }
-  const isStats = current === 'Player Stats';
-  const search = isStats
-    ? `<input id="q" oninput="render()" placeholder="Search player…" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm mb-4">`
-    : '';
-  const keepQ = document.getElementById('q')?.value || '';
-  view.innerHTML = `<h2 class="font-display text-3xl font-bold">${esc(current.toUpperCase())}</h2>` + search +
-    (current === 'Rosters' ? renderRosters(rows) : renderGeneric(rows, isStats));
+  const rows = current === 'Free Agents' ? data['Rosters'] : data[current];
+  if (!rows) { view.innerHTML = '<p class="text-slate-400">This tab couldn’t be loaded.</p>'; return; }
+  const stats = current === 'Player Stats';
+  const prevQ = document.getElementById('q')?.value || '';
+  let body;
+  if (current === 'Rosters') body = renderRosters(rows);
+  else if (current === 'Free Agents') body = renderFreeAgents(rows);
+  else if (/season 1$/i.test(current)) body = renderSchedule(rows) || renderGeneric(rows, false);
+  else body = renderGeneric(rows, stats);
+  view.innerHTML = `<h2 class="font-display text-3xl font-bold">${esc(current.toUpperCase())}</h2>` +
+    (stats ? `<input id="q" oninput="render()" placeholder="Search player…" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-sm">` : '') + body;
   const qEl = document.getElementById('q');
-  if (qEl && keepQ) { qEl.value = keepQ; qEl.focus(); }
+  if (qEl && prevQ) { qEl.value = prevQ; qEl.focus(); }
 }
  
 function buildNav() {
-  document.getElementById('nav').innerHTML = Object.keys(TABS).map(label =>
-    `<button data-tab="${esc(label)}" class="nav-btn px-4 py-1.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white ${label === current ? 'active' : ''}">${esc(label)}</button>`
-  ).join('');
+  document.getElementById('nav').innerHTML = Object.keys(TABS).map(l =>
+    `<button data-tab="${esc(l)}" class="nav-btn px-4 py-1.5 rounded-lg text-sm font-semibold text-slate-300 hover:text-white ${l === current ? 'active' : ''}">${esc(l)}</button>`).join('');
   document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => {
     current = b.dataset.tab;
     document.querySelectorAll('.nav-btn').forEach(x => x.classList.toggle('active', x === b));
@@ -167,20 +221,13 @@ function buildNav() {
  
 async function load() {
   const err = document.getElementById('error');
-  const results = await Promise.allSettled(Object.entries(TABS).map(async ([label, tab]) => [label, await fetchTab(tab)]));
+  const entries = Object.entries(TABS).filter(([, tab]) => tab);
+  const results = await Promise.allSettled(entries.map(async ([label, tab]) => [label, await fetchTab(tab)]));
   const failed = [];
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') data[r.value[0]] = r.value[1];
-    else failed.push(Object.keys(TABS)[i]);
-  });
+  results.forEach((r, i) => r.status === 'fulfilled' ? data[r.value[0]] = r.value[1] : failed.push(entries[i][0] + ' (' + (r.reason?.message || r.reason) + ')'));
   document.getElementById('loader').classList.add('hidden');
-  if (failed.length === results.length) {
-    err.classList.remove('hidden');
-    err.innerHTML = 'Could not load the sheet. Make sure it is shared as <b>"Anyone with the link can view"</b>.';
-    return;
-  }
   err.classList.toggle('hidden', !failed.length);
-  if (failed.length) err.textContent = 'Some tabs failed to load: ' + failed.join(', ') + '. Check the tab names in TABS.';
+  if (failed.length) err.textContent = 'Could not load: ' + failed.join('; ');
   document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
   render();
 }
