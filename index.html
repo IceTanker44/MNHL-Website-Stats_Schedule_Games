@@ -73,17 +73,17 @@ const head = n => { const c = (n || '').replace(/[^A-Za-z0-9_]/g, ''); return c 
 // ---------- Rosters + Free Agents ----------
 function parseRosters(rows) {
   const teams = []; let team = null;
-  for (const r of rows) {
+  rows.forEach((r, idx) => {
     const name = r[0];
-    if (!name || name === "Team Roster's" || name === 'Name') continue;
-    if (r.some(c => /^wins\b/i.test(c))) {
-      team = { name, record: r.find(c => /^wins\b/i.test(c)), players: [] }; teams.push(team);
-    } else if (/^(draft players|free agents)$/i.test(name)) {
-      team = { name, record: '', players: [] }; teams.push(team);
+    if (!name || name === "Team Roster's" || name === 'Name') return;
+    const nextIsHeader = (rows[idx + 1] || [])[0] === 'Name';
+    const hasWins = r.some(c => /^wins\b/i.test(c));
+    if (hasWins || nextIsHeader || /^(draft players|free agents)$/i.test(name)) {
+      team = { name, record: r.find(c => /^wins\b/i.test(c)) || '', players: [] }; teams.push(team);
     } else if (team && name !== '???') {
       team.players.push({ name, num: r[1] || '', pos: r[2] || 'Any', ovr: r[3] || '0', proj: r[4] || '0' });
     }
-  }
+  });
   return teams;
 }
  
@@ -106,7 +106,7 @@ function playerRow(p) {
  
 function renderRosters(rows) {
   const teams = parseRosters(rows).filter(t => t.players.length && !/free agents/i.test(t.name));
-  if (!teams.length) return '<p class="text-slate-400">No players found yet.</p>';
+  if (!teams.length) return `<p class="text-slate-400">No players found yet.</p><p class="text-xs text-slate-500 mt-2">Debug: read ${rows.length} rows. First row: ${esc(JSON.stringify((rows[0]||[]).slice(0,6)))}</p>`;
   return `<div class="grid md:grid-cols-2 gap-6">` + teams.map(t => `
     <div class="card rounded-2xl p-5">
       <div class="flex justify-between items-center mb-4">
@@ -134,19 +134,32 @@ function renderFreeAgents(rows) {
  
 // ---------- Schedule / standings (Season 1 and Pre-Season 1) ----------
 function renderSchedule(rows) {
-  let stage = 'Regular Season', inStats = false;
+  let inStats = false, playoff = false, round = '';
+  const col = { place: 1, pts: 3, gp: 4, w: 5, l: 6, otl: 7 };
   const games = [], stand = [];
   for (const r of rows) {
     const [a, b, c, d, e, f, g, h, i] = r;
     const filled = r.filter(x => x !== '');
+    if (r.some(x => /^placement$/i.test(x))) {           // standings header row -> map columns by name
+      const find = re => r.findIndex(x => re.test(x));
+      const m = { place: find(/^placement$/i), pts: find(/^points?$/i), gp: find(/^(games played|gp)$/i),
+                  w: find(/^wins?$/i), l: find(/^loss(es)?$/i), otl: find(/^ot\s*loss/i) };
+      Object.keys(m).forEach(k => { if (m[k] >= 0) col[k] = m[k]; });
+      inStats = true; continue;
+    }
     if (/^game\s*\d+/i.test(a) && !inStats) {
       const win = /^(tbd|winner|wins?)$/i.test(f || '') ? '' : (f || '');
-      games.push({ stage, game: a, home: b || 'TBD', away: d || c || 'TBD', time: e || 'TBD', winner: win, proj: g, score: h, stars: i });
+      games.push({ game: a, home: b || 'TBD', away: d || c || 'TBD', time: e || 'TBD', winner: win, proj: g, score: h, stars: i, playoff, round });
     } else if (filled.length === 1 && a) {
       if (/^stats$/i.test(a)) inStats = true;
-      else if (!/^(games|team)$/i.test(a)) { stage = a; inStats = false; }
-    } else if (a && /^\d+$/.test(b || '') && !/^game/i.test(a)) {
-      stand.push({ team: a, place: +b, pts: d || 0, gp: e || 0, w: f || 0, l: g || 0, otl: h || 0 });
+      else if (/^(games|team|home|away)$/i.test(a)) continue;
+      else if (/1st vs 4th/i.test(a)) { playoff = true; round = 'Semifinal · 1st vs 4th'; }
+      else if (/2nd vs 3rd/i.test(a)) { playoff = true; round = 'Semifinal · 2nd vs 3rd'; }
+      else if (/^playoffs?$/i.test(a)) { playoff = true; round = 'Finals'; }
+      else if (/playoff|semifinal/i.test(a)) { playoff = true; round = ''; }
+      else { playoff = false; round = ''; games.push({ banner: a }); }
+    } else if (a && /^\d+$/.test(r[col.place] || '') && !/^game/i.test(a)) {
+      stand.push({ team: a, place: +r[col.place], pts: r[col.pts] || 0, gp: r[col.gp] || 0, w: r[col.w] || 0, l: r[col.l] || 0, otl: r[col.otl] || 0 });
     }
   }
   if (!games.length && !stand.length) return null;
@@ -156,18 +169,19 @@ function renderSchedule(rows) {
     <thead><tr class="text-xs uppercase text-slate-400 border-b border-slate-800"><th class="p-2">#</th><th class="p-2">Team</th><th class="p-2">GP</th><th class="p-2">W</th><th class="p-2">L</th><th class="p-2">OTL</th><th class="p-2 text-sky-400">PTS</th></tr></thead><tbody class="divide-y divide-slate-800/60">
     ${stand.map(t => `<tr><td class="p-2">${t.place}</td><td class="p-2 font-bold">${esc(t.team)}</td><td class="p-2">${esc(t.gp)}</td><td class="p-2">${esc(t.w)}</td><td class="p-2">${esc(t.l)}</td><td class="p-2">${esc(t.otl)}</td><td class="p-2 font-bold text-sky-400">${esc(t.pts)}</td></tr>`).join('')}
     </tbody></table></div>`;
-  [...new Set(games.map(x => x.stage))].forEach(s => {
-    html += `<h3 class="font-display text-2xl font-bold text-sky-400 mt-6">${esc(s.toUpperCase())}</h3><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">` +
-      games.filter(x => x.stage === s).map(x => {
-        const done = x.winner !== '';
-        const stars = x.stars && !x.stars.includes('???') ? `<p class="text-xs text-amber-300 mt-1">⭐ ${esc(x.stars)}</p>` : '';
-        return `<div class="card rounded-xl p-3.5">
-          <div class="flex justify-between text-xs text-slate-400 mb-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>
-            <span class="px-2 py-0.5 rounded font-bold ${done ? 'bg-emerald-500/20 text-emerald-300' : 'bg-sky-500/20 text-sky-300'}">${done ? 'FINAL ' + esc(x.score || '') : esc(x.time)}</span></div>
-          <div class="flex justify-between items-center font-bold text-sm"><span>${esc(x.home)}</span><span class="text-xs text-slate-500">VS</span><span>${esc(x.away)}</span></div>
-          ${done ? `<p class="text-xs text-emerald-300 mt-1">Winner: ${esc(x.winner)}</p>` : (x.proj ? `<p class="text-xs text-slate-400 mt-1">Projected: ${esc(x.proj)}</p>` : '')}${stars}</div>`;
-      }).join('') + `</div>`;
-  });
+  if (games.length) html += `<h3 class="font-display text-2xl font-bold text-sky-400 mt-6">GAMES</h3><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">` +
+    games.map(x => {
+      if (x.banner) return `<div class="col-span-full text-center text-xs font-bold uppercase tracking-wider text-slate-400 border-y border-slate-800 py-1.5">${esc(x.banner)}</div>`;
+      const done = x.winner !== '';
+      const stars = x.stars && !x.stars.includes('???') ? `<p class="text-xs text-amber-300 mt-1">⭐ ${esc(x.stars)}</p>` : '';
+      const badge = x.playoff ? `<div class="mb-2"><span class="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500 text-slate-950">🏆 PLAYOFFS${x.round ? ' · ' + esc(x.round.toUpperCase()) : ''}</span></div>` : '';
+      return `<div class="card rounded-xl p-3.5 ${x.playoff ? 'border-amber-500/50' : ''}">
+        <div class="flex justify-between text-xs text-slate-400 mb-2"><span class="font-bold uppercase text-slate-300">${esc(x.game)}</span>
+          <span class="px-2 py-0.5 rounded font-bold ${done ? 'bg-emerald-500/20 text-emerald-300' : 'bg-sky-500/20 text-sky-300'}">${done ? 'FINAL ' + esc(x.score || '') : esc(x.time)}</span></div>
+        ${badge}
+        <div class="flex justify-between items-center font-bold text-sm"><span>${esc(x.home)}</span><span class="text-xs text-slate-500">VS</span><span>${esc(x.away)}</span></div>
+        ${done ? `<p class="text-xs text-emerald-300 mt-1">Winner: ${esc(x.winner)}</p>` : (x.proj ? `<p class="text-xs text-slate-400 mt-1">Projected: ${esc(x.proj)}</p>` : '')}${stars}</div>`;
+    }).join('') + `</div>`;
   return html;
 }
  
