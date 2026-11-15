@@ -70,6 +70,7 @@ const makeTabs = n => ({
   'Home':        { type: 'home',       tab: null },
   'Rosters':     { type: 'roster',     tab: "Team Roster's" },
   'Free Agents': { type: 'freeagents', tab: null },
+  'Transactions': { type: 'transactions', tab: ['Transactions', 'Transaction'], optional: true },
   [`Pre-Season ${n}`]: { type: 'schedule', tab: [`Pre-Season ${n}`, ...(n === 1 ? ['Pre-Season Schedule', 'Pre-Seson Schedule', 'Pre-Season'] : [])] },
   [`Season ${n}`]:     { type: 'schedule', tab: [`Season ${n}`, ...(n === 1 ? ['Regular Season Schedule', 'Regular Season Secdule', 'Regular Season'] : [])] },
   'Player Stats': { type: 'stats', tab: ['Player Overall Tracker', 'Player Stats', 'Player Tracker', 'Overall Tracker', 'Stats'] },
@@ -424,6 +425,44 @@ function renderMedia(rows) {
   </div>`;
 }
 
+// ---------- Transactions ----------
+// Sheet layout: Team A Player | Team A Picks | Team B Player | Team B Picks, each cell like "Maple Leafs: Cgeiser55".
+// The team before the colon is the team SENDING that player/pick. Optional columns: Date, Type.
+const splitList = x => (x || '').split(/\s*(?:,|;|\+|&|\band\b)\s*/i).map(t => t.trim()).filter(t => t && !/^(none|n\/a|-|—)$/i.test(t));
+function sideOf(playerCell, pickCell) {
+  const m = c => { const i = (c || '').indexOf(':'); return i > 0 ? [c.slice(0, i).trim(), c.slice(i + 1).trim()] : ['', (c || '').trim()]; };
+  const [t1, p] = m(playerCell), [t2, k] = m(pickCell);
+  return { team: t1 || t2, players: splitList(p), picks: splitList(k) };
+}
+function parseTransactions(rows) {
+  const hi = (rows || []).findIndex(r => r.some(c => /team a player/i.test(c)));
+  if (hi < 0) return [];
+  const h = rows[hi].map(c => c.toLowerCase()), f = re => h.findIndex(c => re.test(c));
+  const ci = { aP: f(/team a player/), aK: f(/team a pick/), bP: f(/team b player/), bK: f(/team b pick/), date: f(/^date/), type: f(/^type/) };
+  return rows.slice(hi + 1).filter(r => r.some(c => c)).map(r => ({
+    type: (ci.type >= 0 && r[ci.type]) || 'Trade', date: ci.date >= 0 ? (r[ci.date] || '') : '',
+    a: sideOf(r[ci.aP], r[ci.aK]), b: sideOf(r[ci.bP], r[ci.bK])
+  })).filter(t => t.a.team || t.b.team).reverse();   // newest (bottom of the sheet) first
+}
+const pickText = p => /pick/i.test(p) ? p : p + ' pick';
+const assets = s => [...s.players.map(p => p === '???' ? 'an unknown player' : p), ...s.picks.map(pickText)].join(' + ') || 'nothing';
+const txSummary = t => `${t.a.team || '?'} send ${assets(t.a)} to ${t.b.team || '?'} for ${assets(t.b)}.`;
+function txSide(sd) {
+  return `<div class="flex-1 rounded-xl bg-slate-900/70 border border-slate-800 p-3">
+    <div class="flex items-center gap-2 mb-2">${chip(sd.team)}<span class="font-bold">${esc(sd.team || 'Unknown team')}</span><span class="text-[10px] uppercase tracking-wider text-slate-500 ml-auto">sends</span></div>
+    <div class="space-y-1.5">${sd.players.map(p => `<div ${p === '???' ? '' : `data-player="${esc(p)}"`} class="flex items-center gap-2 rounded-lg bg-slate-800/60 px-2 py-1.5 ${p === '???' ? '' : 'cursor-pointer hover:bg-slate-800'}">${avatar(p, 'w-7 h-7 text-xs')}<span class="font-semibold text-sm ${p === '???' ? 'italic text-slate-300' : ''}">${p === '???' ? 'Unknown Player' : esc(p)}</span></div>`).join('')}
+      ${sd.picks.map(p => `<div class="rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm font-semibold px-2 py-1.5">🎟️ ${esc(pickText(p))}</div>`).join('')}
+      ${!sd.players.length && !sd.picks.length ? '<p class="text-sm text-slate-500 italic">Nothing</p>' : ''}</div></div>`;
+}
+function renderTransactions(rows) {
+  const list = parseTransactions(rows);
+  if (!list.length) return '<p class="text-slate-400">No transactions yet.</p>';
+  return `<div class="space-y-4">${list.map(t => `<div class="card rounded-2xl p-4">
+    <div class="flex items-center justify-between mb-3"><span class="px-2 py-0.5 rounded text-xs font-black uppercase bg-amber-500/20 text-amber-300">${esc(t.type)}</span><span class="text-xs text-slate-500">${esc(t.date)}</span></div>
+    <div class="flex flex-col md:flex-row items-stretch gap-3">${txSide(t.a)}<div class="flex items-center justify-center text-2xl text-sky-400 md:px-1">⇄</div>${txSide(t.b)}</div>
+    <p class="text-xs text-slate-400 mt-3">${esc(txSummary(t))}</p></div>`).join('')}</div>`;
+}
+
 // ---------- Home ----------
 function goTab(l) {
   if (!TABS[l]) return;
@@ -517,7 +556,12 @@ function renderHome() {
     ${upcoming.length ? `<div class="space-y-2">${upcoming.slice(0, 4).map(g => `<div class="card rounded-xl p-3"><div class="flex justify-between text-xs text-slate-400 mb-2"><span class="font-bold uppercase">${esc(g.game)}</span><span class="px-2 py-0.5 rounded font-bold bg-sky-500/20 text-sky-300">${esc(g.time || 'TBD')}</span></div>
         <div class="flex items-center justify-between text-sm font-bold"><span class="inline-flex items-center gap-2">${chip(g.home)}${esc(g.home)}</span><span class="text-xs text-slate-500">VS</span><span class="inline-flex items-center gap-2">${esc(g.away)}${chip(g.away)}</span></div></div>`).join('')}</div>`
       : '<p class="text-slate-400 text-center py-8">No games scheduled.</p>'}`;
-  const tx = `${secHead('TRANSACTION <span class="text-sky-400">HISTORY</span>', '', '')}<p class="text-slate-500 text-sm text-center py-6">Transactions are coming soon.</p>`;
+  const trades = parseTransactions(rowsOf('transactions') || []).slice(0, 3);
+  const tx = `${secHead('TRANSACTION <span class="text-sky-400">HISTORY</span>', 'All moves', labelsOf('transactions')[0])}
+    ${trades.length ? `<div class="space-y-2">${trades.map(t => `<div class="card rounded-xl p-3"><div class="flex justify-between items-center mb-1.5">
+        <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300">${esc(t.type)}</span><span class="text-[10px] text-slate-500">${esc(t.date)}</span></div>
+        <p class="text-sm">${esc(txSummary(t))}</p></div>`).join('')}</div>`
+      : '<p class="text-slate-500 text-sm text-center py-6">No transactions yet.</p>'}`;
   const discord = `<div class="rounded-xl p-4 bg-gradient-to-br from-indigo-500 to-indigo-700"><p class="text-[10px] font-bold uppercase tracking-wider bg-white/20 inline-block px-2 py-0.5 rounded">Community Hub</p>
     <p class="font-bold text-lg mt-2">Join the Official Discord</p><p class="text-sm text-indigo-100">Chat with players, find a team and get live game updates.</p>
     <div class="flex gap-2 mt-3"><a href="${DISCORD_URL}" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-white text-indigo-700 text-sm font-bold">Join Discord</a>
@@ -578,6 +622,7 @@ function render() {
   let body;
   if (type === 'roster') body = renderRosters(rows);
   else if (type === 'freeagents') body = renderFreeAgents(rows);
+  else if (type === 'transactions') body = renderTransactions(rows);
   else if (type === 'draft') body = renderDraft(rows) || renderGeneric(rows, false);
   else if (type === 'schedule') body = renderSchedule(rows) || renderGeneric(rows, false);
   else body = renderGeneric(rows, stats);
