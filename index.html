@@ -47,25 +47,27 @@ const DISCORD_URL = 'https://discord.gg/hzamb3jURt';
 const SKINS = {
 };
 
-// Each button: its label, the sheet tab name(s) to look for, and how to draw it.
-//   tab:  one name, a list of names to try, or 'gid:123' (the number after #gid= in the tab's address; survives renames)
-//   type: roster | freeagents | schedule | stats | draft | table
-// If you rename a tab in the sheet, add its new name to that tab's list here.
-// Which season to show: 'auto' picks the newest season it finds in your sheet
-// (it looks for tabs named "Season 2", "Pre-Season 2", ...). Or type a number like 2 to force it.
+// Which season is the current one: 'auto' picks the newest season it finds in your sheet
+// (tabs named "Season 2", "Pre-Season 2", ...). Or type a number like 2 to force it. Older seasons go in the Archive tab.
 const SEASON = 'auto';
 
+// Each button: its label, the sheet tab name(s) to look for, and how to draw it.
+//   tab:  one name, a list of names to try, or 'gid:123' (the number after #gid= in the tab's address; survives renames)
+//   type: roster | freeagents | schedule | stats | draft | archive | table
+// If you rename a tab in the sheet, add its new name to that tab's list here.
+// Unnumbered names (like "Regular Season Schedule" or "Drafts") are only used for Season 1, so a new season never shows old data.
 const makeTabs = n => ({
   'Rosters':     { type: 'roster',     tab: "Team Roster's" },
   'Free Agents': { type: 'freeagents', tab: null },
-  [`Pre-Season ${n}`]: { type: 'schedule', tab: [`Pre-Season ${n}`, 'Pre-Season Schedule', 'Pre-Seson Schedule', 'Pre-Season'] },
-  [`Season ${n}`]:     { type: 'schedule', tab: [`Season ${n}`, 'Regular Season Schedule', 'Regular Season Secdule', 'Regular Season'] },
+  [`Pre-Season ${n}`]: { type: 'schedule', tab: [`Pre-Season ${n}`, ...(n === 1 ? ['Pre-Season Schedule', 'Pre-Seson Schedule', 'Pre-Season'] : [])] },
+  [`Season ${n}`]:     { type: 'schedule', tab: [`Season ${n}`, ...(n === 1 ? ['Regular Season Schedule', 'Regular Season Secdule', 'Regular Season'] : [])] },
   'Player Stats': { type: 'stats', tab: ['Player Overall Tracker', 'Player Stats', 'Player Tracker', 'Overall Tracker', 'Stats'] },
-  [`S${n} Draft`]: { type: 'draft', tab: [`Season ${n} Draft`, `Drafts S${n}`, `S${n} Draft`, 'Drafts', 'Draft'] },
-  'Mock Drafts':  { type: 'draft', tab: ['Mock Drafts', 'Mock Draft', 'Mock'] }
+  [`S${n} Draft`]: { type: 'draft', tab: [`Season ${n} Draft`, `Drafts S${n}`, `S${n} Draft`, ...(n === 1 ? ['Drafts', 'Draft'] : [])] },
+  'Mock Drafts':  { type: 'draft', tab: ['Mock Drafts', 'Mock Draft', 'Mock'] },
+  'Archive':      { type: 'archive',    tab: null }
 });
-let TABS = makeTabs(SEASON === 'auto' ? 1 : SEASON);
-// A tab can be a single name or a list of names to try. If a tab isn't found, check the exact name at the bottom of your sheet.
+let CURRENT_SEASON = SEASON === 'auto' ? 1 : SEASON;
+let TABS = makeTabs(CURRENT_SEASON);
 const REFRESH_MS = 60000;
 // =======================
 
@@ -297,6 +299,43 @@ function renderDraft(rows) {
       </div>`).join('')}</div></div>`).join('') + `</div>`;
 }
 
+// ---------- Archive (old seasons) ----------
+let archiveSeason = null;
+const archiveCache = {};
+async function loadArchive(n) {
+  if (archiveCache[n]) return archiveCache[n];
+  const base = rowsOf('roster'), t = makeTabs(n);
+  const get = async names => {
+    for (const nm of names) {
+      try { const r = await fetchTab(nm); if (!(base && sameRows(r, base))) return r; } catch (e) { /* next name */ }
+    }
+    return null;
+  };
+  const [pre, reg, draft] = await Promise.all([get(t[`Pre-Season ${n}`].tab), get(t[`Season ${n}`].tab), get(t[`S${n} Draft`].tab)]);
+  return (archiveCache[n] = { pre, reg, draft });
+}
+function archiveHtml(a, n) {
+  const parts = [];
+  if (a.pre) parts.push([`PRE-SEASON ${n}`, renderSchedule(a.pre) || renderGeneric(a.pre, false)]);
+  if (a.reg) parts.push([`SEASON ${n}`, renderSchedule(a.reg) || renderGeneric(a.reg, false)]);
+  if (a.draft) parts.push([`SEASON ${n} DRAFT`, renderDraft(a.draft) || renderGeneric(a.draft, false)]);
+  return parts.length
+    ? parts.map(([t, h]) => `<h3 class="font-display text-3xl font-bold text-amber-400 mt-8 mb-3">${esc(t)}</h3>${h}`).join('')
+    : `<p class="text-slate-400">No tabs found for Season ${n}. Archived tabs need to be named like “Season ${n}”, “Pre-Season ${n}” and “Season ${n} Draft”.</p>`;
+}
+function pickArchive(n) { archiveSeason = n; render(); }
+function renderArchive() {
+  const view = document.getElementById('view');
+  const title = `<h2 class="font-display text-3xl font-bold">ARCHIVE</h2>`;
+  const olds = []; for (let n = CURRENT_SEASON - 1; n >= 1; n--) olds.push(n);
+  if (!olds.length) { view.innerHTML = title + `<p class="text-slate-400">No past seasons yet. When the next season starts, Season ${CURRENT_SEASON} will move here.</p>`; return; }
+  if (!olds.includes(archiveSeason)) archiveSeason = olds[0];
+  const picker = olds.map(n => `<button onclick="pickArchive(${n})" class="px-4 py-1.5 rounded-lg text-sm font-semibold ${n === archiveSeason ? 'bg-sky-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'}">Season ${n}</button>`).join(' ');
+  const cached = archiveCache[archiveSeason];
+  view.innerHTML = title + `<div class="flex flex-wrap gap-2">${picker}</div>` + (cached ? archiveHtml(cached, archiveSeason) : '<p class="text-slate-400">Loading…</p>');
+  if (!cached) { const n = archiveSeason; loadArchive(n).then(() => { if (TABS[current].type === 'archive' && archiveSeason === n) render(); }); }
+}
+
 // ---------- Generic table (stats, drafts, anything else) ----------
 function renderGeneric(rows, searchable) {
   if (!rows.length) return '<p class="text-slate-400">This tab is empty.</p>';
@@ -321,6 +360,7 @@ function renderGeneric(rows, searchable) {
 function render() {
   const view = document.getElementById('view');
   const type = TABS[current].type;
+  if (type === 'archive') { renderArchive(); return; }
   const rows = type === 'freeagents' ? rowsOf('roster') : data[current];
   if (!rows) { view.innerHTML = '<p class="text-slate-400">This tab wasn’t found. Check that its name in your sheet matches the TABS list at the top of the script.</p>'; return; }
   const stats = type === 'stats';
@@ -482,7 +522,7 @@ async function detectSeason() {
   return Math.max(1, ...hits);
 }
 async function init() {
-  try { TABS = makeTabs(await detectSeason()); } catch (e) { /* keep defaults */ }
+  try { CURRENT_SEASON = await detectSeason(); TABS = makeTabs(CURRENT_SEASON); } catch (e) { /* keep defaults */ }
   current = Object.keys(TABS)[0];
   buildNav();
   await load();
