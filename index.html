@@ -55,6 +55,12 @@ const SEASON = 'auto';
 const LIVE_CHANNEL_ID = 'UCOO3uwGUhIgJ2tVQbyKwMEg';
 const LIVE_CHANNEL_NAME = 'MNHL Live';
 
+// Team / extra channels that always show on the Media tab (you can also add more in the sheet's "Media" tab).
+// team must match the team name used in your sheet so it groups with them; leave '' for league-wide.
+const BUILTIN_MEDIA = [
+  { name: 'Clankerville Renegades', platform: 'YouTube', team: 'CV Renegades', link: 'https://www.youtube.com/channel/UCMNS82Zph3G-E-fu7oHFmLw' }
+];
+
 // Each button: its label, the sheet tab name(s) to look for, and how to draw it.
 //   tab:  one name, a list of names to try, or 'gid:123' (the number after #gid= in the tab's address; survives renames)
 //   type: roster | freeagents | schedule | stats | draft | archive | table
@@ -341,49 +347,79 @@ function renderArchive() {
   if (!cached) { const n = archiveSeason; loadArchive(n).then(() => { if (TABS[current].type === 'archive' && archiveSeason === n) render(); }); }
 }
 
-// ---------- Media (live stream + team channels / socials) ----------
-let mediaSig = '';
+// ---------- Media (live stream + combined video feed + follow links) ----------
+let mediaSig = '', feed = null, feedFilter = 'All';
 const safeUrl = u => /^https?:\/\//i.test(u || '') ? u : '';
-function embedSrc(link) {
-  let m;
-  if ((m = link.match(/twitch\.tv\/([A-Za-z0-9_]+)/))) return `https://player.twitch.tv/?channel=${m[1]}&parent=${encodeURIComponent(location.hostname)}`;
-  if ((m = link.match(/youtube\.com\/channel\/(UC[\w-]{20,})/))) return `https://www.youtube.com/embed/live_stream?channel=${m[1]}`;
-  if ((m = link.match(/(?:[?&]v=|youtu\.be\/|\/live\/)([\w-]{11})/))) return `https://www.youtube.com/embed/${m[1]}`;
-  return '';
+const ytId = id => /^[\w-]{11}$/.test(id || '') ? id : '';
+const iconOf = p => ({ youtube: '▶️', twitch: '🟣', instagram: '📸', tiktok: '🎵', twitter: '🐦', x: '🐦' }[p] || '🔗');
+const ago = iso => {
+  const m = Math.max(0, (Date.now() - new Date(iso).getTime()) / 60000);
+  if (isNaN(m)) return '';
+  if (m < 60) return Math.floor(m) + 'm ago';
+  if (m < 1440) return Math.floor(m / 60) + 'h ago';
+  if (m < 43200) return Math.floor(m / 1440) + 'd ago';
+  return new Date(iso).toLocaleDateString();
+};
+// feed.json is rebuilt every ~30 minutes by the GitHub Action in .github/workflows
+async function loadFeed() {
+  try {
+    const r = await fetch('feed.json?_=' + Date.now());
+    if (!r.ok) throw new Error('no feed');
+    feed = await r.json();
+  } catch (e) { feed = feed || { items: [], missing: true }; }
+  if (TABS[current] && TABS[current].type === 'media') drawFeed();
 }
-function loadEmbed(btn) {
-  const box = btn.closest('[data-embed]');
-  box.innerHTML = `<iframe src="${esc(box.dataset.embed)}" class="w-full aspect-video rounded-xl" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" frameborder="0"></iframe>`;
+function setFeedFilter(t) { feedFilter = t; drawFeed(); }
+function playVid(el) {
+  el.outerHTML = `<iframe src="https://www.youtube.com/embed/${esc(el.dataset.vid)}?autoplay=1" class="w-full aspect-video" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" frameborder="0"></iframe>`;
+}
+function drawFeed() {
+  const root = document.getElementById('feed-root');
+  if (!root) return;
+  const items = ((feed && feed.items) || []).filter(i => ytId(i.id));
+  if (!items.length) {
+    root.innerHTML = `<p class="text-slate-400 text-sm">${feed && feed.missing ? 'The video feed isn’t set up yet.' : 'No videos yet.'} It fills in automatically after the next update.</p>`;
+    return;
+  }
+  const teams = ['All', ...new Set(items.map(i => i.team || 'League'))];
+  if (!teams.includes(feedFilter)) feedFilter = 'All';
+  const shown = items.filter(i => feedFilter === 'All' || (i.team || 'League') === feedFilter);
+  root.innerHTML = `<div class="flex flex-wrap gap-2 mb-4">${teams.map(t => `<button onclick="setFeedFilter(this.dataset.t)" data-t="${esc(t)}" class="px-3 py-1.5 rounded-lg text-xs font-bold ${t === feedFilter ? 'bg-sky-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'}">${esc(t)}</button>`).join('')}</div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">${shown.map(i => `
+      <div class="card rounded-xl overflow-hidden">
+        <div data-vid="${ytId(i.id)}" onclick="playVid(this)" class="relative aspect-video bg-black cursor-pointer">
+          <img src="https://i.ytimg.com/vi/${ytId(i.id)}/hqdefault.jpg" alt="" loading="lazy" class="w-full h-full object-cover">
+          <span class="absolute inset-0 flex items-center justify-center text-5xl drop-shadow">▶️</span></div>
+        <div class="p-3"><p class="font-bold text-sm leading-snug">${esc(i.title)}</p>
+          <p class="text-xs text-slate-400 mt-1">${esc(i.channel || '')}${i.team ? ' • ' + esc(i.team) : ''} • ${esc(ago(i.published))}</p></div>
+      </div>`).join('')}</div>
+    ${feed.updated ? `<p class="text-xs text-slate-500 mt-3">Feed updated ${esc(ago(feed.updated))}</p>` : ''}`;
 }
 function renderMedia(rows) {
-  const iconOf = p => ({ youtube: '▶️', twitch: '🟣', instagram: '📸', tiktok: '🎵', twitter: '🐦', x: '🐦' }[p] || '🔗');
   const hi = rows.findIndex(r => r.some(c => /^platform$/i.test(c)));
   const h = hi >= 0 ? rows[hi] : ['Name', 'Platform', 'Link', 'Team'];
   const ix = k => Math.max(0, h.findIndex(c => c.toLowerCase() === k));
   const [cn, cp, cl, ct] = ['name', 'platform', 'link', 'team'].map(ix);
-  const items = rows.slice(hi + 1).filter(r => safeUrl(r[cl])).map(r => {
-    const link = r[cl];
-    let p = (r[cp] || '').toLowerCase();
+  const mk = (name, platform, link, team) => {
+    let p = (platform || '').toLowerCase();
     if (!p) p = (link.match(/(youtube|twitch|instagram|tiktok|twitter|x)\./i) || [])[1]?.toLowerCase() || '';
-    return { name: r[cn] || p || 'Link', p, link, team: r[ct] || '', embed: ['youtube', 'twitch'].includes(p) ? embedSrc(link) : '' };
-  });
-  const card = it => `<div class="card rounded-xl p-4">
-    <div class="flex items-center justify-between gap-3">
-      <p class="font-bold">${iconOf(it.p)} ${esc(it.name)} <span class="text-xs font-normal text-slate-400 capitalize">${esc(it.p)}</span></p>
-      <div class="flex gap-2">${it.embed ? `<button onclick="loadEmbed(this)" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold">Watch here</button>` : ''}
-        <a href="${esc(it.link)}" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold">Open</a></div>
-    </div>${it.embed ? `<div data-embed="${esc(it.embed)}" class="mt-3"></div>` : ''}</div>`;
-  const league = items.filter(i => !i.team), teams = [...new Set(items.filter(i => i.team).map(i => i.team))];
-  let html = `<div id="media-root" class="space-y-6">
+    return { name: name || p || 'Link', p, link, team: team || '' };
+  };
+  const seen = new Set();
+  const links = [...BUILTIN_MEDIA.map(b => mk(b.name, b.platform, b.link, b.team)),
+                 ...rows.slice(hi + 1).filter(r => safeUrl(r[cl])).map(r => mk(r[cn], r[cp], r[cl], r[ct]))]
+    .filter(i => !seen.has(i.link) && seen.add(i.link));
+  return `<div id="media-root" class="space-y-6">
     <div class="card rounded-2xl p-4">
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2"><h3 class="font-display text-2xl font-bold">🔴 ${esc(LIVE_CHANNEL_NAME.toUpperCase())}</h3>
         <a href="https://www.youtube.com/channel/${LIVE_CHANNEL_ID}/live" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold">Watch on YouTube</a></div>
       <iframe src="https://www.youtube.com/embed/live_stream?channel=${LIVE_CHANNEL_ID}" class="w-full aspect-video rounded-xl bg-black" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" frameborder="0"></iframe>
       <p class="text-xs text-slate-500 mt-2">If nobody is live right now, the player will show as unavailable. Check back during game time!</p>
-    </div>`;
-  if (league.length) html += `<h3 class="font-display text-2xl font-bold text-sky-400">LEAGUE</h3><div class="grid md:grid-cols-2 gap-4">${league.map(card).join('')}</div>`;
-  teams.forEach(t => { html += `<h3 class="font-display text-2xl font-bold text-sky-400">${esc(t.toUpperCase())}</h3><div class="grid md:grid-cols-2 gap-4">${items.filter(i => i.team === t).map(card).join('')}</div>`; });
-  return html + `</div>`;
+    </div>
+    <div><h3 class="font-display text-2xl font-bold text-sky-400 mb-3">LATEST VIDEOS</h3><div id="feed-root"></div></div>
+    ${links.length ? `<div><h3 class="font-display text-2xl font-bold text-sky-400 mb-3">FOLLOW</h3><div class="flex flex-wrap gap-2">${links.map(l =>
+      `<a href="${esc(l.link)}" target="_blank" rel="noopener" class="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-sky-500 text-sm font-semibold">${iconOf(l.p)} ${esc(l.name)}${l.team ? ` <span class="text-xs text-slate-400">· ${esc(l.team)}</span>` : ''}</a>`).join('')}</div></div>` : ''}
+  </div>`;
 }
 
 // ---------- Generic table (stats, drafts, anything else) ----------
@@ -413,9 +449,10 @@ function render() {
   if (type === 'archive') { renderArchive(); return; }
   if (type === 'media') {
     const sig = JSON.stringify(data[current] || []);
-    if (mediaSig === sig && document.getElementById('media-root')) return;
+    if (mediaSig === sig && document.getElementById('media-root')) { drawFeed(); return; }
     mediaSig = sig;
     view.innerHTML = `<h2 class="font-display text-3xl font-bold">${esc(current.toUpperCase())}</h2>` + renderMedia(data[current] || []);
+    drawFeed();
     return;
   }
   mediaSig = '';
@@ -448,6 +485,7 @@ function buildNav() {
 const resolved = {};   // remembers which tab name worked
 const sameRows = (a, b) => JSON.stringify(a.slice(0, 6)) === JSON.stringify(b.slice(0, 6));
 async function load() {
+  loadFeed();
   const err = document.getElementById('error');
   const failed = [];
   const rosterLabel = labelsOf('roster')[0];
