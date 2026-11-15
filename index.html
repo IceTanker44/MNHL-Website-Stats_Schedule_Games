@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MNHL | Minecraft National Hockey League</title>
+<link rel="icon" href="logos/mnhl.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@500;700&display=swap" rel="stylesheet">
@@ -18,7 +19,7 @@
 
 <header class="sticky top-0 z-50 bg-slate-950/90 border-b border-slate-800 backdrop-blur">
   <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-    <h1 class="font-display text-3xl font-bold">🏒 MNHL <span class="text-sky-400">INFO HUB</span></h1>
+    <h1 class="font-display text-3xl font-bold flex items-center gap-2"><img src="logos/mnhl.png" alt="" class="w-9 h-9 object-contain" onerror="this.replaceWith('🏒')"> MNHL <span class="text-sky-400">INFO HUB</span></h1>
     <nav id="nav" class="flex flex-wrap gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800"></nav>
     <div class="flex items-center gap-3"><a href="https://discord.gg/hzamb3jURt" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Join Discord</a><span id="updated" class="text-xs text-slate-400"></span></div>
   </div>
@@ -45,6 +46,15 @@ const DISCORD_URL = 'https://discord.gg/hzamb3jURt';
 // Optional: Java-account skins. Format: 'name as in the sheet (lowercase)': 'Java username'
 // Most players should use the heads/ folder instead (see avatar()).
 const SKINS = {
+};
+
+// Team logos: put each image in a "logos" folder next to index.html (square PNG, about 256px, transparent background works best).
+// Left side = team name (any part of the sheet's name matches, so 'Kings' covers 'EB Kings'). Teams without a file keep a colored initials badge.
+const TEAM_LOGOS = {
+  'Maple Leafs': 'logos/maple-leafs.png',
+  'Renegades':   'logos/renegades.png',
+  'Krakens':     'logos/krakens.png',
+  'Kings':       'logos/kings.png'
 };
 
 // Which season is the current one: 'auto' picks the newest season it finds in your sheet
@@ -182,7 +192,7 @@ function renderRosters(rows) {
   return `<div class="grid md:grid-cols-2 gap-6">` + teams.map(t => `
     <div class="card rounded-2xl p-5">
       <div class="flex justify-between items-center mb-4">
-        <h3 class="font-display text-2xl font-bold">${esc(t.name)}</h3>
+        <div class="flex items-center gap-3">${chip(t.name, 'w-10 h-10 text-xs')}<h3 class="font-display text-2xl font-bold">${esc(t.name)}</h3></div>
         <span class="text-xs text-slate-400">${esc(t.record)} • ${t.players.length} players</span>
       </div>
       <div class="space-y-2">${t.players.map(playerRow).join('')}</div>
@@ -487,10 +497,12 @@ function standingsFrom(rows) {
   }
   return out.sort((a, b) => a.place - b.place);
 }
-const chip = name => {
+const logoFor = n => { const k = Object.keys(TEAM_LOGOS).find(k => sameTeam(n, k)); return k ? TEAM_LOGOS[k] : ''; };
+const chip = (name, size = 'w-7 h-7 text-[10px]') => {
   const ab = (name || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 3).toUpperCase();
   let h = 0; for (const ch of (name || '')) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return `<span class="inline-flex items-center justify-center w-7 h-7 rounded-md text-[10px] font-black text-white shrink-0" style="background:hsl(${h} 55% 35%)">${esc(ab)}</span>`;
+  const logo = logoFor(name);
+  return `<span class="relative inline-flex items-center justify-center ${size} rounded-md font-black text-white shrink-0 overflow-hidden" style="background:hsl(${h} 55% 35%)">${esc(ab)}${logo ? `<img src="${esc(logo)}" alt="" class="absolute inset-0 w-full h-full object-contain bg-slate-900 p-0.5" onerror="this.remove()">` : ''}</span>`;
 };
 const secHead = (title, linkText, tab) => `<div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
   <h3 class="font-display text-xl font-bold tracking-wider">${title}</h3>
@@ -678,7 +690,8 @@ async function load() {
 const ROSTER_LABELS = ['Name', 'Number', 'Position', 'Overall', 'Projected Overall', 'PTS', 'Rank', 'GP', 'PTS Per Game', '3 Stars of the Game'];
 const STAT_LABELS = ['Player', 'Pos', 'GP', 'Goals', 'Shots', 'Points', 'Hits', 'Faceoff Wins', 'Faceoffs', 'Blocked Shots', 'Shots Against', 'Penalties', 'Overall'];
 
-const teamKey = n => (n || '').toLowerCase().replace(/rengades/g, 'renegades').replace(/[^a-z]/g, '');
+// Old/alternate names are treated as the same team here (Hurricanes = Maple Leafs, Rengades = Renegades)
+const teamKey = n => (n || '').toLowerCase().replace(/rengades/g, 'renegades').replace(/hurricanes/g, 'mapleleafs').replace(/[^a-z]/g, '');
 const sameTeam = (a, b) => { a = teamKey(a); b = teamKey(b); return a && b && (a.includes(b) || b.includes(a)); };
 
 function gamesFrom(rows) {
