@@ -18,7 +18,7 @@
 
 <header class="sticky top-0 z-50 bg-slate-950/90 border-b border-slate-800 backdrop-blur">
   <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-    <h1 class="font-display text-3xl font-bold">🏒 MNHL <span class="text-sky-400">HUB</span></h1>
+    <h1 class="font-display text-3xl font-bold">🏒 MNHL <span class="text-sky-400">INFO HUB</span></h1>
     <nav id="nav" class="flex flex-wrap gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800"></nav>
     <div class="flex items-center gap-3"><a href="https://discord.gg/hzamb3jURt" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Join Discord</a><span id="updated" class="text-xs text-slate-400"></span></div>
   </div>
@@ -51,6 +51,10 @@ const SKINS = {
 // (tabs named "Season 2", "Pre-Season 2", ...). Or type a number like 2 to force it. Older seasons go in the Archive tab.
 const SEASON = 'auto';
 
+// MNHL Live on YouTube (channel ID starts with UC). The Media tab shows its live stream.
+const LIVE_CHANNEL_ID = 'UCOO3uwGUhIgJ2tVQbyKwMEg';
+const LIVE_CHANNEL_NAME = 'MNHL Live';
+
 // Each button: its label, the sheet tab name(s) to look for, and how to draw it.
 //   tab:  one name, a list of names to try, or 'gid:123' (the number after #gid= in the tab's address; survives renames)
 //   type: roster | freeagents | schedule | stats | draft | archive | table
@@ -64,6 +68,7 @@ const makeTabs = n => ({
   'Player Stats': { type: 'stats', tab: ['Player Overall Tracker', 'Player Stats', 'Player Tracker', 'Overall Tracker', 'Stats'] },
   [`S${n} Draft`]: { type: 'draft', tab: [`Season ${n} Draft`, `Drafts S${n}`, `S${n} Draft`, ...(n === 1 ? ['Drafts', 'Draft'] : [])] },
   'Mock Drafts':  { type: 'draft', tab: ['Mock Drafts', 'Mock Draft', 'Mock'] },
+  'Media':        { type: 'media',      tab: ['Media', 'Socials'], optional: true },
   'Archive':      { type: 'archive',    tab: null }
 });
 let CURRENT_SEASON = SEASON === 'auto' ? 1 : SEASON;
@@ -336,6 +341,51 @@ function renderArchive() {
   if (!cached) { const n = archiveSeason; loadArchive(n).then(() => { if (TABS[current].type === 'archive' && archiveSeason === n) render(); }); }
 }
 
+// ---------- Media (live stream + team channels / socials) ----------
+let mediaSig = '';
+const safeUrl = u => /^https?:\/\//i.test(u || '') ? u : '';
+function embedSrc(link) {
+  let m;
+  if ((m = link.match(/twitch\.tv\/([A-Za-z0-9_]+)/))) return `https://player.twitch.tv/?channel=${m[1]}&parent=${encodeURIComponent(location.hostname)}`;
+  if ((m = link.match(/youtube\.com\/channel\/(UC[\w-]{20,})/))) return `https://www.youtube.com/embed/live_stream?channel=${m[1]}`;
+  if ((m = link.match(/(?:[?&]v=|youtu\.be\/|\/live\/)([\w-]{11})/))) return `https://www.youtube.com/embed/${m[1]}`;
+  return '';
+}
+function loadEmbed(btn) {
+  const box = btn.closest('[data-embed]');
+  box.innerHTML = `<iframe src="${esc(box.dataset.embed)}" class="w-full aspect-video rounded-xl" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" frameborder="0"></iframe>`;
+}
+function renderMedia(rows) {
+  const iconOf = p => ({ youtube: '▶️', twitch: '🟣', instagram: '📸', tiktok: '🎵', twitter: '🐦', x: '🐦' }[p] || '🔗');
+  const hi = rows.findIndex(r => r.some(c => /^platform$/i.test(c)));
+  const h = hi >= 0 ? rows[hi] : ['Name', 'Platform', 'Link', 'Team'];
+  const ix = k => Math.max(0, h.findIndex(c => c.toLowerCase() === k));
+  const [cn, cp, cl, ct] = ['name', 'platform', 'link', 'team'].map(ix);
+  const items = rows.slice(hi + 1).filter(r => safeUrl(r[cl])).map(r => {
+    const link = r[cl];
+    let p = (r[cp] || '').toLowerCase();
+    if (!p) p = (link.match(/(youtube|twitch|instagram|tiktok|twitter|x)\./i) || [])[1]?.toLowerCase() || '';
+    return { name: r[cn] || p || 'Link', p, link, team: r[ct] || '', embed: ['youtube', 'twitch'].includes(p) ? embedSrc(link) : '' };
+  });
+  const card = it => `<div class="card rounded-xl p-4">
+    <div class="flex items-center justify-between gap-3">
+      <p class="font-bold">${iconOf(it.p)} ${esc(it.name)} <span class="text-xs font-normal text-slate-400 capitalize">${esc(it.p)}</span></p>
+      <div class="flex gap-2">${it.embed ? `<button onclick="loadEmbed(this)" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold">Watch here</button>` : ''}
+        <a href="${esc(it.link)}" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold">Open</a></div>
+    </div>${it.embed ? `<div data-embed="${esc(it.embed)}" class="mt-3"></div>` : ''}</div>`;
+  const league = items.filter(i => !i.team), teams = [...new Set(items.filter(i => i.team).map(i => i.team))];
+  let html = `<div id="media-root" class="space-y-6">
+    <div class="card rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2"><h3 class="font-display text-2xl font-bold">🔴 ${esc(LIVE_CHANNEL_NAME.toUpperCase())}</h3>
+        <a href="https://www.youtube.com/channel/${LIVE_CHANNEL_ID}/live" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold">Watch on YouTube</a></div>
+      <iframe src="https://www.youtube.com/embed/live_stream?channel=${LIVE_CHANNEL_ID}" class="w-full aspect-video rounded-xl bg-black" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" frameborder="0"></iframe>
+      <p class="text-xs text-slate-500 mt-2">If nobody is live right now, the player will show as unavailable. Check back during game time!</p>
+    </div>`;
+  if (league.length) html += `<h3 class="font-display text-2xl font-bold text-sky-400">LEAGUE</h3><div class="grid md:grid-cols-2 gap-4">${league.map(card).join('')}</div>`;
+  teams.forEach(t => { html += `<h3 class="font-display text-2xl font-bold text-sky-400">${esc(t.toUpperCase())}</h3><div class="grid md:grid-cols-2 gap-4">${items.filter(i => i.team === t).map(card).join('')}</div>`; });
+  return html + `</div>`;
+}
+
 // ---------- Generic table (stats, drafts, anything else) ----------
 function renderGeneric(rows, searchable) {
   if (!rows.length) return '<p class="text-slate-400">This tab is empty.</p>';
@@ -361,6 +411,14 @@ function render() {
   const view = document.getElementById('view');
   const type = TABS[current].type;
   if (type === 'archive') { renderArchive(); return; }
+  if (type === 'media') {
+    const sig = JSON.stringify(data[current] || []);
+    if (mediaSig === sig && document.getElementById('media-root')) return;
+    mediaSig = sig;
+    view.innerHTML = `<h2 class="font-display text-3xl font-bold">${esc(current.toUpperCase())}</h2>` + renderMedia(data[current] || []);
+    return;
+  }
+  mediaSig = '';
   const rows = type === 'freeagents' ? rowsOf('roster') : data[current];
   if (!rows) { view.innerHTML = '<p class="text-slate-400">This tab wasn’t found. Check that its name in your sheet matches the TABS list at the top of the script.</p>'; return; }
   const stats = type === 'stats';
@@ -408,7 +466,7 @@ async function load() {
       } catch (e) { /* try next name */ }
     }
     delete data[label];
-    failed.push(label + ' (tab not found, check its exact name)');
+    if (!c.optional) failed.push(label + ' (tab not found, check its exact name)');
   }));
   document.getElementById('loader').classList.add('hidden');
   err.classList.toggle('hidden', !failed.length);
