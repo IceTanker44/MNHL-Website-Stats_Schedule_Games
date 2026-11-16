@@ -1,12 +1,19 @@
 {
- "updated": "2026-11-16T02:16:27.860Z",
+ "updated": "2026-11-16T02:25:02.661Z",
  "items": [
   {
    "id": "YpQKrdBJBio",
-   "title": "CV Robots @ BC Knights",
+   "title": "CV Robots @ BC Knights (Game 1)",
    "published": "",
-   "channel": "CV Robots @ BC Knights",
-   "team": "CV Robots @ BC Knights"
+   "channel": "CV Robots @ BC Knights (Game 1)",
+   "team": "CV Robots @ BC Knights (Game 1)"
+  },
+  {
+   "id": "06Z9l-uRo4I",
+   "title": "CV Robots @ BC Knights Game 2)",
+   "published": "",
+   "channel": "CV Robots @ BC Knights Game 2)",
+   "team": "CV Robots @ BC Knights Game 2)"
   }
  ]
 }
