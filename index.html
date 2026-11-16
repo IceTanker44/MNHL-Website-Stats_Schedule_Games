@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MNHL | Minecraft National Hockey League</title>
-<link rel="icon" href="logos/mnhl.png">
+<link rel="icon" href="mnhl.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@500;700&display=swap" rel="stylesheet">
@@ -19,7 +19,7 @@
 
 <header class="sticky top-0 z-50 bg-slate-950/90 border-b border-slate-800 backdrop-blur">
   <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-    <h1 class="font-display text-3xl font-bold flex items-center gap-2"><img src="logos/mnhl.png" alt="" class="w-9 h-9 object-contain" onerror="this.replaceWith('🏒')"> MNHL <span class="text-sky-400">INFO HUB</span></h1>
+    <h1 class="font-display text-3xl font-bold flex items-center gap-2"><img src="mnhl.png" alt="" class="w-9 h-9 object-contain" onerror="this.replaceWith('🏒')"> MNHL <span class="text-sky-400">INFO HUB</span></h1>
     <nav id="nav" class="flex flex-wrap gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800"></nav>
     <div class="flex items-center gap-3"><a href="https://discord.gg/hzamb3jURt" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Join Discord</a><span id="updated" class="text-xs text-slate-400"></span></div>
   </div>
@@ -48,13 +48,13 @@ const DISCORD_URL = 'https://discord.gg/hzamb3jURt';
 const SKINS = {
 };
 
-// Team logos: put each image in a "logos" folder next to index.html (square PNG, about 256px, transparent background works best).
+// Team logos: put each image next to index.html in your repo (square PNG, transparent background works best).
 // Left side = team name (any part of the sheet's name matches, so 'Kings' covers 'EB Kings'). Teams without a file keep a colored initials badge.
 const TEAM_LOGOS = {
-  'Maple Leafs': 'logos/maple-leafs.png',
-  'Renegades':   'logos/renegades.png',
-  'Krakens':     'logos/krakens.png',
-  'Kings':       'logos/kings.png'
+  'Maple Leafs': 'maple-leafs.png',
+  'Renegades':   'renegades.png',
+  'Krakens':     'krakens.png',
+  'Kings':       'kings.png'
 };
 
 // Which season is the current one: 'auto' picks the newest season it finds in your sheet
