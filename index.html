@@ -420,7 +420,7 @@ function renderMedia(rows) {
   };
   const seen = new Set();
   const links = [...BUILTIN_MEDIA.map(b => mk(b.name, b.platform, b.link, b.team)),
-                 ...rows.slice(hi + 1).filter(r => safeUrl(r[cl])).map(r => mk(r[cn], r[cp], r[cl], r[ct]))]
+                 ...rows.slice(hi + 1).filter(r => safeUrl(r[cl]) && !/[?&]v=|youtu\.be\/|\/shorts\//.test(r[cl])).map(r => mk(r[cn], r[cp], r[cl], r[ct]))]
     .filter(i => !seen.has(i.link) && seen.add(i.link));
   return `<div id="media-root" class="space-y-6">
     <div class="card rounded-2xl p-4">
