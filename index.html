@@ -478,7 +478,7 @@ function moveCard(e) {
       ${avatar(e.player, 'w-12 h-12 text-xl')}
       <div class="flex-1 min-w-0"><p class="font-bold text-lg ${unk ? 'italic text-slate-300' : ''}">${unk ? 'Unknown Player' : esc(e.player)}</p>
         <p class="text-sm text-slate-400">${e.kind === 'signing' ? 'signs with' : 'gets a contract with'} <span class="inline-flex items-center gap-1.5 font-semibold text-slate-200 align-middle">${chip(e.team)}${esc(e.team || 'a team')}</span></p></div>
-      ${e.detail ? `<span class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 text-xs font-bold whitespace-nowrap">${esc(e.detail)}</span>` : ''}
+      ${e.detail ? `<div class="flex flex-wrap gap-1.5 justify-end">${e.detail.split(/\s*[|·]\s*|,\s+/).filter(Boolean).map(d => `<span class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 text-xs font-bold whitespace-nowrap">${esc(d)}</span>`).join('')}</div>` : ''}
     </div></div>`;
 }
 function renderTransactions(rows) {
