@@ -65,6 +65,10 @@ const SEASON = 'auto';
 const LIVE_CHANNEL_ID = 'UCOO3uwGUhIgJ2tVQbyKwMEg';
 const LIVE_CHANNEL_NAME = 'MNHL Live';
 
+// The video list (feed.json) is rebuilt by GitHub every 30 minutes. Reading it straight from GitHub means the site
+// sees new videos right away, without waiting for the website itself to rebuild.
+const FEED_URL = 'https://raw.githubusercontent.com/IceTanker44/MNHL-Website-Stats_Schedule_Games/main/feed.json';
+
 // Team / extra channels that always show on the Media tab (you can also add more in the sheet's "Media" tab).
 // team must match the team name used in your sheet so it groups with them; leave '' for league-wide.
 const BUILTIN_MEDIA = [
@@ -375,7 +379,8 @@ const ago = iso => {
 // feed.json is rebuilt every ~30 minutes by the GitHub Action in .github/workflows
 async function loadFeed() {
   try {
-    const r = await fetch('feed.json?_=' + Date.now());
+    let r = await fetch(FEED_URL + '?_=' + Date.now()).catch(() => null);
+    if (!r || !r.ok) r = await fetch('feed.json?_=' + Date.now());
     if (!r.ok) throw new Error('no feed');
     feed = await r.json();
   } catch (e) { feed = feed || { items: [], missing: true }; }
@@ -408,20 +413,7 @@ function drawFeed() {
       </div>`).join('')}</div>
     ${feed.updated ? `<p class="text-xs text-slate-500 mt-3">Feed updated ${esc(ago(feed.updated))}</p>` : ''}`;
 }
-function renderMedia(rows) {
-  const hi = rows.findIndex(r => r.some(c => /^platform$/i.test(c)));
-  const h = hi >= 0 ? rows[hi] : ['Name', 'Platform', 'Link', 'Team'];
-  const ix = k => Math.max(0, h.findIndex(c => c.toLowerCase() === k));
-  const [cn, cp, cl, ct] = ['name', 'platform', 'link', 'team'].map(ix);
-  const mk = (name, platform, link, team) => {
-    let p = (platform || '').toLowerCase();
-    if (!p) p = (link.match(/(youtube|twitch|instagram|tiktok|twitter|x)\./i) || [])[1]?.toLowerCase() || '';
-    return { name: name || p || 'Link', p, link, team: team || '' };
-  };
-  const seen = new Set();
-  const links = [...BUILTIN_MEDIA.map(b => mk(b.name, b.platform, b.link, b.team)),
-                 ...rows.slice(hi + 1).filter(r => safeUrl(r[cl]) && !/[?&]v=|youtu\.be\/|\/shorts\//.test(r[cl])).map(r => mk(r[cn], r[cp], r[cl], r[ct]))]
-    .filter(i => !seen.has(i.link) && seen.add(i.link));
+function renderMedia() {
   return `<div id="media-root" class="space-y-6">
     <div class="card rounded-2xl p-4">
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2"><h3 class="font-display text-2xl font-bold">🔴 ${esc(LIVE_CHANNEL_NAME.toUpperCase())}</h3>
@@ -430,8 +422,6 @@ function renderMedia(rows) {
       <p class="text-xs text-slate-500 mt-2">If nobody is live right now, the player will show as unavailable. Check back during game time!</p>
     </div>
     <div><h3 class="font-display text-2xl font-bold text-sky-400 mb-3">LATEST VIDEOS</h3><div id="feed-root"></div></div>
-    ${links.length ? `<div><h3 class="font-display text-2xl font-bold text-sky-400 mb-3">FOLLOW</h3><div class="flex flex-wrap gap-2">${links.map(l =>
-      `<a href="${esc(l.link)}" target="_blank" rel="noopener" class="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-sky-500 text-sm font-semibold">${iconOf(l.p)} ${esc(l.name)}${l.team ? ` <span class="text-xs text-slate-400">· ${esc(l.team)}</span>` : ''}</a>`).join('')}</div></div>` : ''}
   </div>`;
 }
 
