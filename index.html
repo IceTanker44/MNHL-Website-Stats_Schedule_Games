@@ -434,16 +434,32 @@ function sideOf(playerCell, pickCell) {
   const [t1, p] = m(playerCell), [t2, k] = m(pickCell);
   return { team: t1 || t2, players: splitList(p), picks: splitList(k) };
 }
+// Signings / Contracts cells look like "Team: Player" or "Team: Player - $1,000 x 1 yr" (use ; or + between several players).
+const splitMoves = x => (x || '').split(/\s*(?:;|\n|\s\+\s)\s*/).map(t => t.trim()).filter(t => t && !/^(none|n\/a|-|—)$/i.test(t));
+function moveOf(cell) {
+  const i = cell.indexOf(':'), team = i > 0 ? cell.slice(0, i).trim() : '', rest = (i > 0 ? cell.slice(i + 1) : cell).trim();
+  const m = rest.match(/^(.*?)(?:\s+[-–—|]\s+|\s*\()(.*)$/);
+  return m ? { team, player: m[1].trim(), detail: m[2].replace(/\)\s*$/, '').trim() } : { team, player: rest, detail: '' };
+}
 function parseTransactions(rows) {
   const hi = (rows || []).findIndex(r => r.some(c => /team a player/i.test(c)));
   if (hi < 0) return [];
   const h = rows[hi].map(c => c.toLowerCase()), f = re => h.findIndex(c => re.test(c));
-  const ci = { aP: f(/team a player/), aK: f(/team a pick/), bP: f(/team b player/), bK: f(/team b pick/), date: f(/^date/), type: f(/^type/) };
-  return rows.slice(hi + 1).filter(r => r.some(c => c)).map(r => ({
-    type: (ci.type >= 0 && r[ci.type]) || 'Trade', date: ci.date >= 0 ? (r[ci.date] || '') : '',
-    a: sideOf(r[ci.aP], r[ci.aK]), b: sideOf(r[ci.bP], r[ci.bK])
-  })).filter(t => t.a.team || t.b.team).reverse();   // newest (bottom of the sheet) first
+  const ci = { aP: f(/team a player/), aK: f(/team a pick/), bP: f(/team b player/), bK: f(/team b pick/),
+               sign: f(/^signing/), cont: f(/^contact|^contract/), date: f(/^date/), type: f(/^type/) };
+  const evs = [];
+  rows.slice(hi + 1).filter(r => r.some(c => c)).forEach(r => {
+    const date = ci.date >= 0 ? (r[ci.date] || '') : '';
+    const a = sideOf(r[ci.aP], r[ci.aK]), b = sideOf(r[ci.bP], r[ci.bK]);
+    if (a.team || b.team) evs.push({ kind: 'trade', type: (ci.type >= 0 && r[ci.type]) || 'Trade', date, a, b });
+    if (ci.sign >= 0) splitMoves(r[ci.sign]).forEach(c => evs.push({ kind: 'signing', type: 'Signing', date, ...moveOf(c) }));
+    if (ci.cont >= 0) splitMoves(r[ci.cont]).forEach(c => evs.push({ kind: 'contract', type: 'Contract', date, ...moveOf(c) }));
+  });
+  return evs.reverse();   // newest (bottom of the sheet) first
 }
+const kindCls = k => k === 'signing' ? 'bg-emerald-500/20 text-emerald-300' : k === 'contract' ? 'bg-sky-500/20 text-sky-300' : 'bg-amber-500/20 text-amber-300';
+const evSummary = e => e.kind === 'trade' ? txSummary(e)
+  : `${e.player === '???' ? 'An unknown player' : e.player} ${e.kind === 'signing' ? 'signs with' : 'gets a contract with'} ${e.team || 'a team'}${e.detail ? ` (${e.detail})` : ''}.`;
 const pickText = p => /pick/i.test(p) ? p : p + ' pick';
 const assets = s => [...s.players.map(p => p === '???' ? 'an unknown player' : p), ...s.picks.map(pickText)].join(' + ') || 'nothing';
 const txSummary = t => `${t.a.team || '?'} send ${assets(t.a)} to ${t.b.team || '?'} for ${assets(t.b)}.`;
@@ -454,11 +470,22 @@ function txSide(sd) {
       ${sd.picks.map(p => `<div class="rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm font-semibold px-2 py-1.5">🎟️ ${esc(pickText(p))}</div>`).join('')}
       ${!sd.players.length && !sd.picks.length ? '<p class="text-sm text-slate-500 italic">Nothing</p>' : ''}</div></div>`;
 }
+function moveCard(e) {
+  const unk = e.player === '???';
+  return `<div class="card rounded-2xl p-4">
+    <div class="flex items-center justify-between mb-3"><span class="px-2 py-0.5 rounded text-xs font-black uppercase ${kindCls(e.kind)}">${esc(e.type)}</span><span class="text-xs text-slate-500">${esc(e.date)}</span></div>
+    <div ${unk ? '' : `data-player="${esc(e.player)}"`} class="flex items-center gap-3 ${unk ? '' : 'cursor-pointer'}">
+      ${avatar(e.player, 'w-12 h-12 text-xl')}
+      <div class="flex-1 min-w-0"><p class="font-bold text-lg ${unk ? 'italic text-slate-300' : ''}">${unk ? 'Unknown Player' : esc(e.player)}</p>
+        <p class="text-sm text-slate-400">${e.kind === 'signing' ? 'signs with' : 'gets a contract with'} <span class="inline-flex items-center gap-1.5 font-semibold text-slate-200 align-middle">${chip(e.team)}${esc(e.team || 'a team')}</span></p></div>
+      ${e.detail ? `<span class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 text-xs font-bold whitespace-nowrap">${esc(e.detail)}</span>` : ''}
+    </div></div>`;
+}
 function renderTransactions(rows) {
   const list = parseTransactions(rows);
   if (!list.length) return '<p class="text-slate-400">No transactions yet.</p>';
-  return `<div class="space-y-4">${list.map(t => `<div class="card rounded-2xl p-4">
-    <div class="flex items-center justify-between mb-3"><span class="px-2 py-0.5 rounded text-xs font-black uppercase bg-amber-500/20 text-amber-300">${esc(t.type)}</span><span class="text-xs text-slate-500">${esc(t.date)}</span></div>
+  return `<div class="space-y-4">${list.map(t => t.kind !== 'trade' ? moveCard(t) : `<div class="card rounded-2xl p-4">
+    <div class="flex items-center justify-between mb-3"><span class="px-2 py-0.5 rounded text-xs font-black uppercase ${kindCls('trade')}">${esc(t.type)}</span><span class="text-xs text-slate-500">${esc(t.date)}</span></div>
     <div class="flex flex-col md:flex-row items-stretch gap-3">${txSide(t.a)}<div class="flex items-center justify-center text-2xl text-sky-400 md:px-1">⇄</div>${txSide(t.b)}</div>
     <p class="text-xs text-slate-400 mt-3">${esc(txSummary(t))}</p></div>`).join('')}</div>`;
 }
@@ -561,8 +588,8 @@ function renderHome() {
   const trades = parseTransactions(rowsOf('transactions') || []).slice(0, 3);
   const tx = `${secHead('TRANSACTION <span class="text-sky-400">HISTORY</span>', 'All moves', labelsOf('transactions')[0])}
     ${trades.length ? `<div class="space-y-2">${trades.map(t => `<div class="card rounded-xl p-3"><div class="flex justify-between items-center mb-1.5">
-        <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300">${esc(t.type)}</span><span class="text-[10px] text-slate-500">${esc(t.date)}</span></div>
-        <p class="text-sm">${esc(txSummary(t))}</p></div>`).join('')}</div>`
+        <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase ${kindCls(t.kind)}">${esc(t.type)}</span><span class="text-[10px] text-slate-500">${esc(t.date)}</span></div>
+        <p class="text-sm">${esc(evSummary(t))}</p></div>`).join('')}</div>`
       : '<p class="text-slate-500 text-sm text-center py-6">No transactions yet.</p>'}`;
   const discord = `<div class="rounded-xl p-4 bg-gradient-to-br from-indigo-500 to-indigo-700"><p class="text-[10px] font-bold uppercase tracking-wider bg-white/20 inline-block px-2 py-0.5 rounded">Community Hub</p>
     <p class="font-bold text-lg mt-2">Join the Official Discord</p><p class="text-sm text-indigo-100">Chat with players, find a team and get live game updates.</p>
