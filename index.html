@@ -6,6 +6,7 @@
 <title>MNHL | Minecraft National Hockey League</title>
 <link rel="icon" href="mnhl.png">
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Teko:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -69,6 +70,10 @@ const LIVE_CHANNEL_NAME = 'MNHL Live';
 // sees new videos right away, without waiting for the website itself to rebuild.
 const FEED_URL = 'https://raw.githubusercontent.com/IceTanker44/MNHL-Website-Stats_Schedule_Games/main/feed.json';
 
+// News + sign-in (Supabase). Paste the two values from Supabase > Project Settings > API. The "anon" key is meant to be public.
+const SUPABASE_URL = '';
+const SUPABASE_KEY = '';
+
 // Team / extra channels that always show on the Media tab (you can also add more in the sheet's "Media" tab).
 // team must match the team name used in your sheet so it groups with them; leave '' for league-wide.
 const BUILTIN_MEDIA = [
@@ -82,6 +87,7 @@ const BUILTIN_MEDIA = [
 // Unnumbered names (like "Regular Season Schedule" or "Drafts") are only used for Season 1, so a new season never shows old data.
 const makeTabs = n => ({
   'Home':        { type: 'home',       tab: null },
+  'News':        { type: 'news',       tab: null },
   'Rosters':     { type: 'roster',     tab: "Team Roster's" },
   'Free Agents': { type: 'freeagents', tab: null },
   'Transactions': { type: 'transactions', tab: ['Transactions', 'Transaction'], optional: true },
@@ -387,6 +393,28 @@ async function loadFeed() {
   if (TABS[current] && TABS[current].type === 'media') drawFeed();
   if (TABS[current] && TABS[current].type === 'home') render();
 }
+// Videos typed into the sheet's Media tab show up within a minute (the page reads the sheet live).
+// feed.json (rebuilt by GitHub on a schedule) only adds automatic channel uploads on top of those.
+function sheetVideos() {
+  const l = labelsOf('media')[0], rows = (l && data[l]) || [];
+  const hi = rows.findIndex(r => r.some(c => /^platform$/i.test(c)));
+  if (hi < 0) return [];
+  const hd = rows[hi].map(c => c.toLowerCase());
+  const ix = (k, d) => { const i = hd.findIndex(c => c.startsWith(k)); return i >= 0 ? i : d; };
+  const cn = ix('name', 0), cl = ix('link', 2), ct = ix('team', -1), cd = ix('date', -1);
+  return rows.slice(hi + 1).map(r => {
+    const id = ((r[cl] || '').match(/(?:[?&]v=|youtu\.be\/|\/shorts\/|\/live\/)([\w-]{11})/) || [])[1];
+    if (!id) return null;
+    const t = ct >= 0 ? (r[ct] || '') : '', team = /^league$/i.test(t) ? '' : t;
+    const d = cd >= 0 && r[cd] ? new Date(r[cd]) : null;
+    return { id, title: r[cn] || 'Video', published: d && !isNaN(d) ? d.toISOString() : '', channel: team || 'MNHL', team };
+  }).filter(Boolean);
+}
+function allVideos() {
+  const seen = new Set();
+  return [...sheetVideos(), ...((feed && feed.items) || [])].filter(i => ytId(i.id) && !seen.has(i.id) && seen.add(i.id))
+    .sort((a, b) => new Date(b.published || 0) - new Date(a.published || 0));
+}
 function setFeedFilter(t) { feedFilter = t; drawFeed(); }
 function playVid(el) {
   el.outerHTML = `<iframe src="https://www.youtube.com/embed/${esc(el.dataset.vid)}?autoplay=1" class="w-full aspect-video" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture" frameborder="0"></iframe>`;
@@ -394,7 +422,7 @@ function playVid(el) {
 function drawFeed() {
   const root = document.getElementById('feed-root');
   if (!root) return;
-  const items = ((feed && feed.items) || []).filter(i => ytId(i.id));
+  const items = allVideos();
   if (!items.length) {
     root.innerHTML = `<p class="text-slate-400 text-sm">${feed && feed.missing ? 'The video feed isn’t set up yet.' : 'No videos yet.'} It fills in automatically after the next update.</p>`;
     return;
@@ -541,7 +569,7 @@ function renderHome() {
   }).join('');
 
   // videos (from the feed) or a welcome panel
-  const vids = ((feed && feed.items) || []).filter(i => ytId(i.id));
+  const vids = allVideos();
   const vcard = (i, big) => `<div class="${big ? '' : ''}"><div data-vid="${ytId(i.id)}" onclick="playVid(this)" class="relative aspect-video bg-black rounded-xl overflow-hidden cursor-pointer">
       <img src="https://i.ytimg.com/vi/${ytId(i.id)}/hqdefault.jpg" alt="" loading="lazy" class="w-full h-full object-cover"><span class="absolute inset-0 flex items-center justify-center ${big ? 'text-6xl' : 'text-4xl'} drop-shadow">▶️</span></div>
     <p class="text-xs text-slate-500 mt-2">${esc(i.channel || '')}${i.team ? ' · ' + esc(i.team) : ''} · ${esc(ago(i.published))}</p>
@@ -553,6 +581,14 @@ function renderHome() {
         <p class="text-slate-400 mt-2">Minecraft National Hockey League · Season ${CURRENT_SEASON}</p>
         <div class="flex justify-center gap-3 mt-5"><button data-t="Free Agents" onclick="goTab(this.dataset.t)" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm">Register as a Free Agent</button>
         <a href="${DISCORD_URL}" target="_blank" rel="noopener" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm">Join the Discord</a></div></div>`;
+
+  const np = newsPosts.slice(0, 3);
+  const newsBlock = np.length ? `<div class="mb-10">${secHead('LATEST <span class="text-sky-400">NEWS</span>', 'All news', 'News')}<div class="space-y-3">${np.map(p => {
+    const im = (p.images || []).filter(goodImg)[0];
+    return `<div class="card rounded-xl p-3 flex gap-3 items-start"><div class="flex-1 min-w-0"><p class="text-xs text-slate-500">${esc(p.author_ign)} · ${esc(ago(p.created_at))}</p>
+      <p class="font-bold ${p.title ? 'font-display text-2xl leading-tight' : 'text-sm'} mt-1">${esc(p.title || p.body.slice(0, 140))}</p>
+      ${p.title ? `<p class="text-sm text-slate-300 mt-1">${esc(p.body.slice(0, 140))}${p.body.length > 140 ? '…' : ''}</p>` : ''}</div>
+      ${im ? `<img src="${esc(im)}" loading="lazy" alt="" class="w-28 h-20 object-cover rounded-lg">` : ''}</div>`; }).join('')}</div></div>` : '';
 
   // standings: newest schedule tab that has games played, else the last one
   let st = [], stLabel = '';
@@ -599,10 +635,157 @@ function renderHome() {
   return `<div id="home-root" class="space-y-8">
     ${ticker ? `<div class="flex gap-3 overflow-x-auto pb-2">${ticker}</div>` : ''}
     <div class="grid lg:grid-cols-3 gap-8">
-      <div class="lg:col-span-2 space-y-10"><div>${left}</div>
+      <div class="lg:col-span-2 space-y-10"><div>${newsBlock}${left}</div>
         <div class="grid md:grid-cols-2 gap-8"><div>${standings}</div><div>${leadersHtml}</div></div></div>
       <div class="space-y-8"><div>${stream}</div><div>${up}</div><div>${tx}</div>${discord}</div>
     </div></div>`;
+}
+
+// ---------- News: sign-in, posts, admin ----------
+let sb = null, session = null, profile = null, newsPosts = [];
+const newsReady = () => !!(SUPABASE_URL && SUPABASE_KEY && window.supabase);
+const sbClient = () => { if (!sb && newsReady()) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); return sb; };
+const canPost = () => !!(profile && ['poster', 'moderator', 'admin'].includes(profile.role) && profile.ign);
+const isMod = () => !!(profile && ['moderator', 'admin'].includes(profile.role));
+const elv = id => (document.getElementById(id) || {}).value || '';
+const setMsg = t => { const el = document.getElementById('news-msg'); if (el) el.textContent = t; };
+const nl2br = t => esc(t).replace(/\n/g, '<br>');
+const goodImg = u => typeof u === 'string' && u.startsWith(SUPABASE_URL);
+
+async function loadProfile() {
+  const c = sbClient(); if (!c) return;
+  const { data } = await c.auth.getSession();
+  session = data.session; profile = null;
+  if (session) { const r = await c.from('profiles').select('*').eq('id', session.user.id).maybeSingle(); profile = r.data; }
+}
+async function initAuth() {
+  const c = sbClient(); if (!c) return;
+  await loadProfile();
+  c.auth.onAuthStateChange(async () => {
+    await loadProfile();
+    if (TABS[current] && TABS[current].type === 'news') { drawNewsAuth(); drawPosts(); drawAdmin(); }
+  });
+}
+async function loadPosts() {
+  const c = sbClient(); if (!c) return;
+  const r = await c.from('posts').select('*').order('created_at', { ascending: false }).limit(30);
+  if (!r.error) newsPosts = r.data || [];
+  const t = TABS[current] && TABS[current].type;
+  if (t === 'news') drawPosts(); else if (t === 'home') render();
+}
+function signIn() {
+  sessionStorage.setItem('openNews', '1');
+  sbClient().auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: location.origin + location.pathname } });
+}
+async function signOut() { await sbClient().auth.signOut(); }
+async function submitIgn() {
+  const r = await sbClient().rpc('request_ign', { new_ign: elv('ign-input') });
+  if (r.error) { setMsg(r.error.message); return; }
+  await loadProfile(); drawNewsAuth(); drawAdmin();
+}
+
+function drawNewsAuth() {
+  const a = document.getElementById('news-auth'), c = document.getElementById('news-compose');
+  if (!a || !c) return;
+  c.innerHTML = '';
+  const box = inner => `<div class="card rounded-2xl p-4">${inner}</div>`;
+  if (!session) {
+    a.innerHTML = box(`<div class="flex items-center justify-between gap-3 flex-wrap"><p class="text-sm text-slate-300">Want to post? Sign in with Discord and request access. An admin approves new people.</p>
+      <button onclick="signIn()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm">Sign in with Discord</button></div>`);
+    return;
+  }
+  const who = `<div class="flex items-center justify-between gap-3 flex-wrap"><p class="text-sm"><span class="font-bold">${esc(profile && profile.ign || (profile && profile.discord_name) || 'Signed in')}</span>
+    <span class="text-xs text-slate-400 ml-2">${esc(profile ? profile.role : '')}</span></p>
+    <button onclick="signOut()" class="text-xs text-slate-400 hover:text-white">Sign out</button></div>`;
+  if (!profile) { a.innerHTML = box(who + '<p class="text-sm text-slate-400 mt-2">Your account is still being set up. Refresh in a moment.</p>'); return; }
+  if (profile.role === 'banned') { a.innerHTML = box(who + '<p class="text-sm text-red-300 mt-2">This account can’t post.</p>'); return; }
+  if (!profile.ign) {
+    a.innerHTML = box(who + `<p class="text-sm text-slate-300 mt-3">What’s your in-game name? An admin checks it before you can post.</p>
+      <div class="flex gap-2 mt-2 flex-wrap"><input id="ign-input" maxlength="24" placeholder="Your Minecraft name" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+      <button onclick="submitIgn()" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm">Request access</button></div><p id="news-msg" class="text-xs text-amber-300 mt-2"></p>`);
+    return;
+  }
+  if (profile.role === 'pending') { a.innerHTML = box(who + `<p class="text-sm text-slate-300 mt-2">Request sent as <b>${esc(profile.ign)}</b>. An admin will approve you soon.</p>`); return; }
+  a.innerHTML = box(who);
+  c.innerHTML = `<div class="card rounded-2xl p-4 space-y-3">
+    <input id="np-title" maxlength="120" placeholder="Title (optional)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+    <textarea id="np-body" rows="4" maxlength="2000" placeholder="Write your post…" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm"></textarea>
+    <input id="np-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onchange="previewFiles()" class="text-sm text-slate-300">
+    <div id="np-previews" class="flex gap-2 flex-wrap"></div>
+    <div class="flex items-center gap-3"><button id="np-btn" onclick="submitPost()" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-sm">Post</button>
+      <span id="news-msg" class="text-xs text-amber-300"></span></div></div>`;
+}
+function previewFiles() {
+  const box = document.getElementById('np-previews'), input = document.getElementById('np-files');
+  if (!box || !input) return;
+  box.innerHTML = [...input.files].slice(0, 4).map(f => `<img src="${URL.createObjectURL(f)}" class="w-20 h-20 object-cover rounded-lg" alt="">`).join('');
+}
+async function submitPost() {
+  const c = sbClient(), body = elv('np-body').trim(), title = elv('np-title').trim();
+  if (!c || !canPost()) return;
+  if (!body) { setMsg('Write something first.'); return; }
+  const files = [...((document.getElementById('np-files') || {}).files || [])];
+  if (files.length > 4) { setMsg('Up to 4 images per post.'); return; }
+  const big = files.find(f => f.size > 5 * 1024 * 1024);
+  if (big) { setMsg(big.name + ' is over 5 MB.'); return; }
+  const btn = document.getElementById('np-btn'); if (btn) btn.disabled = true;
+  setMsg('Posting…');
+  try {
+    const urls = [];
+    for (const [i, f] of files.entries()) {
+      const ext = ((f.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'png';
+      const path = `${session.user.id}/${Date.now()}-${i}.${ext}`;
+      const up = await c.storage.from('news-images').upload(path, f, { contentType: f.type });
+      if (up.error) throw up.error;
+      urls.push(c.storage.from('news-images').getPublicUrl(path).data.publicUrl);
+    }
+    const ins = await c.from('posts').insert({ author_id: session.user.id, author_ign: profile.ign, title: title || null, body, images: urls });
+    if (ins.error) throw ins.error;
+    drawNewsAuth();                      // clears the form
+    await loadPosts(); setMsg('Posted!');
+  } catch (e) { setMsg('Could not post: ' + (e.message || e)); if (btn) btn.disabled = false; }
+}
+async function deletePost(id) {
+  const c = sbClient(), p = newsPosts.find(x => x.id === id);
+  if (!c || !p || !confirm('Delete this post?')) return;
+  const r = await c.from('posts').delete().eq('id', id);
+  if (r.error) { alert('Could not delete: ' + r.error.message); return; }
+  const paths = (p.images || []).map(u => decodeURIComponent((u.split('/news-images/')[1] || ''))).filter(Boolean);
+  if (paths.length) await c.storage.from('news-images').remove(paths);
+  await loadPosts();
+}
+function postHtml(p) {
+  const imgs = (p.images || []).filter(goodImg);
+  const mine = session && p.author_id === session.user.id;
+  return `<div class="card rounded-2xl p-4">
+    <div class="flex items-center gap-3 mb-3">${avatar(p.author_ign, 'w-10 h-10 text-lg')}
+      <div class="flex-1"><p class="font-bold text-sm">${esc(p.author_ign)}</p><p class="text-xs text-slate-500">${esc(ago(p.created_at))}</p></div>
+      ${(mine || isMod()) ? `<button onclick="deletePost(${Number(p.id)})" class="text-xs text-red-300 hover:text-red-200">Delete</button>` : ''}</div>
+    ${p.title ? `<h3 class="font-display text-2xl font-bold mb-1">${esc(p.title)}</h3>` : ''}
+    <p class="text-sm text-slate-200 leading-relaxed">${nl2br(p.body)}</p>
+    ${imgs.length ? `<div class="grid ${imgs.length > 1 ? 'grid-cols-2' : ''} gap-2 mt-3">${imgs.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" loading="lazy" alt="" class="rounded-xl w-full max-h-96 object-cover"></a>`).join('')}</div>` : ''}</div>`;
+}
+function drawPosts() {
+  const f = document.getElementById('news-feed'); if (!f) return;
+  f.innerHTML = newsPosts.length ? `<div class="space-y-4">${newsPosts.map(postHtml).join('')}</div>` : '<p class="text-slate-400">No news yet.</p>';
+}
+async function drawAdmin() {
+  const box = document.getElementById('news-admin'); if (!box) return;
+  if (!profile || profile.role !== 'admin') { box.innerHTML = ''; return; }
+  const r = await sbClient().from('profiles').select('*').order('created_at');
+  const rows = (r.data || []).slice().sort((a, b) => (b.role === 'pending') - (a.role === 'pending'));
+  const roles = ['pending', 'poster', 'moderator', 'admin', 'banned'];
+  box.innerHTML = `<div class="card rounded-2xl p-4"><h3 class="font-display text-2xl font-bold text-amber-400 mb-3">ADMIN · PEOPLE</h3>
+    <div class="space-y-2">${rows.map(p => `<div class="flex items-center gap-2 flex-wrap bg-slate-900/70 border ${p.role === 'pending' ? 'border-amber-500/60' : 'border-slate-800'} rounded-xl p-2">
+      <span class="text-xs text-slate-400 w-32 truncate" title="Discord name">${esc(p.discord_name || '—')}</span>
+      <input id="adm-ign-${esc(p.id)}" value="${esc(p.ign)}" maxlength="24" placeholder="in-game name" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm w-40">
+      <select id="adm-role-${esc(p.id)}" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm">${roles.map(x => `<option ${x === p.role ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      <button data-id="${esc(p.id)}" onclick="saveProfile(this.dataset.id)" class="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold">Save</button>
+      <span id="adm-msg-${esc(p.id)}" class="text-xs text-emerald-300"></span></div>`).join('')}</div></div>`;
+}
+async function saveProfile(id) {
+  const r = await sbClient().from('profiles').update({ ign: elv('adm-ign-' + id).trim(), role: elv('adm-role-' + id) }).eq('id', id);
+  const m = document.getElementById('adm-msg-' + id); if (m) m.textContent = r.error ? r.error.message : 'Saved';
 }
 
 // ---------- Generic table (stats, drafts, anything else) ----------
@@ -630,6 +813,14 @@ function render() {
   const view = document.getElementById('view');
   const type = TABS[current].type;
   if (type === 'archive') { renderArchive(); return; }
+  if (type === 'news') {
+    if (!document.getElementById('news-root')) {
+      view.innerHTML = `<h2 class="font-display text-3xl font-bold">NEWS</h2><div id="news-root" class="space-y-6"><div id="news-auth"></div><div id="news-compose"></div><div id="news-feed"></div><div id="news-admin"></div></div>`;
+      if (!sbClient()) { document.getElementById('news-root').innerHTML = '<p class="text-slate-400">News isn’t set up yet.</p>'; return; }
+      drawNewsAuth(); drawPosts(); drawAdmin();
+    }
+    mediaSig = ''; return;   // don't redraw while someone is typing; posts refresh on their own
+  }
   if (type === 'media') {
     const sig = JSON.stringify(data[current] || []);
     if (mediaSig === sig && document.getElementById('media-root')) { drawFeed(); return; }
@@ -675,6 +866,7 @@ const resolved = {};   // remembers which tab name worked
 const sameRows = (a, b) => JSON.stringify(a.slice(0, 6)) === JSON.stringify(b.slice(0, 6));
 async function load() {
   loadFeed();
+  loadPosts();
   const err = document.getElementById('error');
   const failed = [];
   const rosterLabel = labelsOf('roster')[0];
@@ -811,7 +1003,9 @@ async function init() {
   try { CURRENT_SEASON = await detectSeason(); TABS = makeTabs(CURRENT_SEASON); } catch (e) { /* keep defaults */ }
   current = Object.keys(TABS)[0];
   buildNav();
+  try { await initAuth(); } catch (e) { /* news is optional */ }
   await load();
+  if (session && sessionStorage.getItem('openNews')) { sessionStorage.removeItem('openNews'); goTab('News'); }
   setInterval(load, REFRESH_MS);
 }
 init();
